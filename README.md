@@ -1,0 +1,55 @@
+# gh-auto-switch
+
+`gh-auto-switch` switches the active GitHub CLI account for the current Git repository's remote URL.
+
+## Build
+
+```bash
+go build ./cmd/gh-auto-switch
+```
+
+## Config
+
+The default config path is `~/.config/ghautoswitch/config.yml`. Set `GHAUTOSWITCH_CONFIG` to use another path.
+
+```yaml
+version: 1
+
+defaults:
+  remote: origin
+  on_unmatched: error
+  on_unauthenticated: error
+
+rules:
+  - name: github-personal-by-url-user
+    host: github.com
+    url_user: your-login
+    account: your-login
+
+  - name: github-work-by-owner
+    host: github.com
+    owner: your-company
+    account: work-login
+```
+
+Config files must not be symlinks or group/world writable. Files created by `gh-auto-switch init` use `0600`; the default config directory uses `0700`.
+
+## Commands
+
+```bash
+gh-auto-switch init
+gh-auto-switch resolve
+gh-auto-switch switch
+gh-auto-switch switch --remote upstream
+gh-auto-switch exec -- gh pr list
+eval "$(gh-auto-switch print-env)"
+gh-auto-switch check --json
+```
+
+`print-env` only prints `GH_HOST`; it does not switch accounts. `switch` changes `gh` state for the target host but cannot change the parent shell environment.
+
+## Authentication Notes
+
+`switch`, `exec`, and `check` fail closed when `GH_TOKEN`, `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`, or `GITHUB_ENTERPRISE_TOKEN` is set. `GH_CONFIG_DIR` is inherited by subprocesses, so it affects which `gh` authentication store is inspected and switched.
+
+`gh` stores the active account per host globally. `gh-auto-switch exec` holds a host lock while the child process runs, but other tools that bypass `gh-auto-switch` can still change `gh` state.

@@ -78,6 +78,10 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 2. 既定 remote 名は `origin` とすること。
 3. オプションにより remote 名を上書きできること。
 4. remote URL を取得できること。[cite:17][cite:19]
+5. Git リポジトリ判定および remote URL 取得を必要とするサブコマンドは `resolve` / `switch` / `exec` / `print-env` とすること。
+6. `check` は設定ファイル全体と `gh` 認証状態を検査するサブコマンドであり、Git リポジトリ外でも実行できること。
+7. `init` は設定ファイル生成のみを行うサブコマンドであり、Git リポジトリ外でも実行できること。
+8. `--remote <name>` は `resolve` / `switch` / `exec` / `print-env` に適用できること。`check` / `init` では指定不可とし、指定された場合は一般エラーとして扱うこと。
 
 ### 7.2 remote URL 解析
 
@@ -101,6 +105,27 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 5. host は小文字へ正規化して比較すること。
 6. 初版では GitHub の一般的な `owner/repo` 形式を対象とし、path が 2 階層未満または 3 階層以上の remote URL は解釈不能として扱うこと。
 7. `https://user:password@host/...` のように password を含む場合、内部解析は許可するがログ出力では必ずマスクすること。
+8. host は DNS hostname または IDNA hostname として妥当な値のみ許可し、空文字、制御文字、空白、shell metacharacter、path separator を含む host は解釈不能として扱うこと。
+9. port 付き URL は初版では非対応とし、`https://host:port/owner/repo.git` および `ssh://git@host:port/owner/repo.git` は解釈不能として扱うこと。
+10. HTTPS URL の query / fragment は初版では非対応とし、存在する場合は解釈不能として扱うこと。
+11. scheme および host の比較は case-insensitive とし、scheme は小文字へ正規化すること。
+12. owner および repository 名は空文字、`.`、`..`、制御文字、空白、path separator を含んではならないこと。
+13. URL path の percent-encoding は初版では decode せず、`%2F` など path separator を表す encoded 値を含む URL は解釈不能として扱うこと。
+14. path 末尾の `/`、空 path segment、IPv6 literal、SCP-like SSH の port 指定、`repository.git.git` は初版では解釈不能として扱うこと。
+15. IDNA hostname は ASCII punycode へ正規化した値を host として扱うこと。
+
+### 7.2.1 正規化 remote URL
+
+ルール照合および出力で利用する正規化 remote URL は、解析結果から以下の形式で生成すること。
+
+1. HTTPS remote は `https://<host>/<owner>/<repo>.git` として正規化すること。
+2. SSH remote は `ssh://git@<host>/<owner>/<repo>.git` として正規化すること。
+3. host は小文字化し、repo 末尾は必ず `.git` 付きに統一すること。
+4. owner および repo の大小文字は remote URL の値を保持すること。
+5. userinfo は正規化 remote URL には含めないこと。
+6. password や token を含む元 URL は内部保持してよいが、ログ、標準出力、標準エラー、JSON、verbose 出力には出力しないこと。
+7. 人間向けに元 URL を表示する必要がある場合は、userinfo の password component を `***` に置換し、username component も token らしい値の場合は `***` に置換すること。
+8. `url_user` が token らしい値の場合、内部の rule 照合では元の値を利用してよいが、標準出力、標準エラー、JSON、verbose 出力では `***` として出力すること。
 
 ### 7.3 ルールマッチング
 
@@ -116,9 +141,17 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
    3. `host + owner` 一致
    4. `host` のみ一致
 4. 複数 rule が同じ優先順位で一致した場合、設定ファイルで先に定義された rule を採用すること。
-5. `remote_url` glob の照合対象は、秘匿情報を含む元 URL ではなく、credential をマスクした正規化済み remote URL とすること。
+5. `remote_url` glob の照合対象は、秘匿情報を含む元 URL ではなく、7.2.1 で定義した正規化 remote URL とすること。
 6. 一致 rule がない場合の動作を `noop` または `error` で設定できること。
-7. `on_unmatched=noop` の場合、`resolve` / `switch` / `print-env` は正常終了し、account と rule を未解決として出力すること。`exec` は切替せずに指定コマンドを実行すること。
+7. `on_unmatched=noop` の場合、`resolve` / `switch` / `print-env` は正常終了し、account と rule を未解決として出力すること。
+8. `exec` は `on_unmatched` の値にかかわらず、rule 未一致の場合は既定で子プロセスを実行せず rule 未一致エラーとして扱うこと。
+9. `exec --allow-unmatched -- <cmd...>` が明示された場合のみ、rule 未一致でも認証確認および切替を行わず、`GH_HOST` を付与して指定コマンドを実行してよいこと。
+10. `owner` glob の照合対象は owner のみとし、host や repo は含めないこと。
+11. glob は Go の `path.Match` 相当の文法を採用し、`*`, `?`, `[]` をサポートすること。`**` は特別扱いしないこと。
+12. glob 照合は case-sensitive とすること。ただし host の一致のみ小文字正規化後に比較すること。
+13. rule の `host` は完全一致のみとし、glob は許可しないこと。
+14. rule 内に `url_user` / `remote_url` / `owner` を複数指定した場合、同一優先順位の候補としてではなく AND 条件として扱うこと。
+15. rule の優先順位判定では、一致した rule のうち最も高い一致種別をその rule の順位とすること。ただし、指定済みの他条件が不一致の rule は採用してはならないこと。
 
 ### 7.4 `gh` 認証状態確認
 
@@ -126,14 +159,29 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 2. 対象 host に未ログインである場合は切替を実施せず、エラーとして扱うこと。[cite:6][cite:25]
 3. 設定上要求される account が `gh` 側で切替対象として存在しない場合はエラーとすること。[cite:25]
 4. `gh` コマンドが見つからない場合は一般エラーとして扱うこと。
+5. 認証確認は非対話で実行し、対象 host は `gh auth status --hostname <host>` により明示すること。
+6. `gh auth status --json` を使用する場合、終了コードだけで認証済みと判断してはならない。JSON の account / active / token 状態を解析し、対象 host の usable な認証が存在することを確認すること。
+7. `GH_TOKEN`, `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN` のいずれかが環境変数に存在する場合、初版では `switch` / `exec` / `check` を認証エラーとして fail closed すること。ただし `resolve` と `print-env` は警告なしで実行してよい。
+8. `gh` が対話プロンプトを要求する状況はエラーとして扱い、標準入力から回答を待たないこと。
+9. token 環境変数チェックは `switch` / `exec` / `check` の開始時に、rule 未一致判定や `on_unmatched=noop` より先に実施すること。
+10. `gh auth status --json` を利用する場合は、対象 host に対して active account と切替候補 account の一覧を取得できることを前提とすること。
+11. active account は対象 host 上で現在 active と明示された account とし、該当 account が存在しない、token 状態が不明、JSON フィールドが欠落または未知形式の場合は fail closed で認証エラーとして扱うこと。
+12. 要求 account が切替候補一覧に存在しない場合は `account_unavailable` とすること。
+13. `gh` subprocess には `GH_HOST=<host>` を明示的に設定し、token 系環境変数は検出時点で fail して subprocess へ渡さないこと。`GH_CONFIG_DIR` は親プロセスの値を継承してよいが、README にその影響を明記すること。
 
 ### 7.5 アカウント切替
 
 1. 現在の active account が期待 account と異なる場合のみ切替を実施すること。
 2. 切替には `gh auth switch` を利用すること。[cite:25]
 3. 同一 account がすでに active の場合は何も変更せず成功終了すること。
-4. `gh` 呼び出し時は対象 host を `GH_HOST` 環境変数で明示すること。[cite:4]
+4. `gh` 呼び出し時は対象 host を `GH_HOST` 環境変数で明示し、かつ `gh auth switch --hostname <host> --user <account>` により host と account を明示すること。[cite:4]
 5. `ghautoswitch switch` は親 shell の環境変数を変更しないこと。shell へ `GH_HOST` を反映したい場合は `print-env` を使用すること。
+6. `switch` および `exec` は host 単位の排他 lock を取得してから認証確認、必要な切替、切替後確認を行うこと。
+7. 排他 lock の既定パスは `${XDG_RUNTIME_DIR}/ghautoswitch/<lock-key>.lock` とし、`XDG_RUNTIME_DIR` が未設定の場合は OS の一時ディレクトリ配下のユーザー専用ディレクトリを利用すること。
+8. lock 取得待ちの既定 timeout は 10 秒とし、timeout 時は一般エラーとして終了すること。
+9. `<lock-key>` は 7.2 で正規化した ASCII punycode host をファイル名安全な文字列として利用すること。
+10. lock 親ディレクトリは permission `0700` とし、group writable / world writable、symlink、所有者が現在ユーザー以外の場合は一般エラーとして扱うこと。
+11. lock は OS の advisory file lock または同等の原子的な仕組みで実装し、プロセス異常終了時に stale lock file が残っても次回実行を恒久的に妨げないこと。
 
 ### 7.6 実行モード
 
@@ -155,7 +203,14 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 3. 子プロセスの標準入力、標準出力、標準エラーは原則として呼び出し元へ透過すること。
 4. 子プロセスが起動した場合、`ghautoswitch exec` の終了コードは子プロセスの終了コードに従うこと。
 5. 切替前処理でエラーになった場合、子プロセスは実行せず `ghautoswitch` 自身の終了コードを返すこと。
-6. `on_unmatched=noop` の場合は切替せず、`GH_HOST` は remote URL から解決した host を付与して子プロセスを実行すること。
+6. rule 未一致の場合は、`--allow-unmatched` が指定されていない限り子プロセスを実行しないこと。
+7. 子プロセス起動直前に active account を再確認し、期待 account と異なる場合は子プロセスを起動せず認証エラーとして終了すること。
+8. 子プロセス実行中は既定で host 単位の lock を保持し、子プロセス終了後に解放すること。
+9. `exec --` 以降のコマンドが空の場合は一般エラーとして扱うこと。
+10. 子プロセスは shell を介さず、`cmd[0]` を実行ファイル、`cmd[1:]` を引数配列としてそのまま渡して起動すること。
+11. 子プロセスの起動自体に失敗した場合は一般エラーとして扱い、子プロセスの終了コードとは区別すること。
+12. `--json` 指定時でも、子プロセス起動後は `ghautoswitch` 独自の JSON を標準出力へ出力しないこと。前処理エラー時のみ 7.11 の JSON エラー形式で出力すること。
+13. `--allow-unmatched` 指定時は認証確認および切替を行わず、`GH_HOST` は remote URL から解決した host を付与して子プロセスを実行すること。
 
 ### 7.8 `print-env` の動作
 
@@ -163,6 +218,9 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 2. 初版で出力する環境変数は `GH_HOST` とすること。
 3. `print-env` は `gh auth switch` を実行しないこと。
 4. rule 未一致でも remote URL から host を解決できた場合は `GH_HOST` を出力すること。
+5. 出力値は POSIX shell の single quote で必ず quote し、single quote を含む値は `'\''` 形式で escape すること。
+6. `GH_HOST` に出力できる値は 7.2 で妥当と判定された host のみとすること。
+7. 出力例は `export GH_HOST='github.com'` とすること。
 
 ### 7.9 `check` の動作
 
@@ -171,8 +229,20 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 3. rule に登場する host ごとに `gh` 認証状態を確認すること。
 4. rule に登場する account が、対象 host の `gh` 切替候補として存在するか確認すること。
 5. 複数の問題がある場合は、可能な範囲でまとめて報告すること。
+6. `check` は Git リポジトリを必要とせず、`--remote` を受け付けないこと。
+7. token 環境変数が存在する場合、設定ファイルの構文検査までは実施してよいが、`gh` 認証状態検査は実施せず、最終結果は認証エラーとして扱うこと。
 
-### 7.10 出力要件
+### 7.10 `init` の動作
+
+1. `init` は設定ファイルの親ディレクトリが存在しない場合に作成すること。
+2. 既定 config path を使う場合、親ディレクトリは permission `0700`、設定ファイルは permission `0600` で作成すること。
+3. `GHAUTOSWITCH_CONFIG` により config path が上書きされている場合も、作成する設定ファイルは permission `0600` とすること。
+4. 設定ファイルがすでに存在する場合、既定では上書きせず設定エラーとして終了すること。
+5. 上書きは `init --force` が指定された場合のみ許可すること。
+6. 生成する雛形は `version`, `defaults`, 空でない `rules` 例、コメントによる最小説明を含むこと。
+7. `init --print` が指定された場合はファイルを書き込まず、雛形を標準出力へ出力すること。
+
+### 7.11 出力要件
 
 1. 人間向け出力は標準出力に要点を簡潔に表示すること。
 2. 自動化連携用に JSON 出力をサポートすること。
@@ -180,6 +250,20 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 4. ログには認証情報、password、token を出力しないこと。
 5. `--json` の正常系出力は、少なくとも `host`, `owner`, `repo`, `url_user`, `account`, `rule`, `matched`, `action` を含む JSON object とすること。
 6. `--json` のエラー出力は、少なくとも `error.code`, `error.message` を含む JSON object とすること。
+7. 未解決値は JSON では `null` として表現すること。空文字列で未解決を表現してはならない。
+8. `matched` は boolean とすること。
+9. `rule` は一致した rule の `name` 文字列、未一致時は `null` とし、rule object は出力しないこと。
+10. `action` は `none`, `resolved`, `switched`, `exec`, `unmatched_noop`, `check_passed`, `init_created` のいずれかとすること。
+11. エラー時の標準出力には JSON 以外を混在させないこと。人間向けエラーは標準エラーへ出力すること。
+12. `url_user` は出力用の値とし、token らしい値の場合は `***`、存在しない場合は `null` とすること。
+13. 内部照合に利用した生の `url_user` は JSON、verbose、人間向け出力に含めてはならないこと。
+14. サブコマンドごとの正常系 `action` は以下を基本とすること。
+   - `resolve`: `resolved` または `unmatched_noop`
+   - `switch`: `switched` または `none` または `unmatched_noop`
+   - `exec`: 子プロセス起動前の独自 JSON は出力しない。前処理のみを表す必要がある場合は `exec`
+   - `print-env`: `resolved` または `unmatched_noop`
+   - `check`: `check_passed`
+   - `init`: `init_created`。`init --print` は `none`
 
 ## 8. 設定要件
 
@@ -198,7 +282,7 @@ version: 1
 
 defaults:
   remote: origin
-  on_unmatched: noop
+  on_unmatched: error
   on_unauthenticated: error
 
 rules:
@@ -231,7 +315,21 @@ rules:
 5. 不正な glob や不正な YAML は起動時にエラーとする。
 6. `defaults.on_unmatched` は `noop` または `error` のみ許可する。
 7. `defaults.on_unauthenticated` は初版では `error` のみ許可する。
-8. 未知のトップレベルキーおよび未知の rule キーは設定エラーとする。
+8. 未知のトップレベルキー、未知の `defaults` キー、および未知の rule キーは設定エラーとする。
+9. `version` は整数 `1` のみ許可すること。
+10. `rules` は 1 件以上の配列とすること。
+11. `rules[].host` は 7.2 の host 妥当性条件を満たすこと。
+12. `rules[].account` は空文字、空白、制御文字を含んではならないこと。
+13. `rules[].url_user` は空文字、空白、制御文字を含んではならないこと。
+14. `rules[].remote_url` と `rules[].owner` は同一 rule 内で併用してよい。ただし指定された条件はすべて一致必須とし、優先順位は 7.3 の一致種別に従うこと。
+15. 設定ファイルまたは親ディレクトリが group writable / world writable の場合、既定では設定エラーとして扱うこと。
+16. 設定ファイルが symlink の場合、初版では設定エラーとして扱うこと。
+17. `defaults.remote` は省略可能とし、省略時は `origin` とすること。指定する場合は空文字、空白、制御文字を含んではならないこと。
+18. `rules[].name` は空文字、空白、制御文字を含んではならないこと。
+19. `rules[].remote_url` は 7.2.1 の正規化 remote URL に対する glob として評価可能な文字列であること。
+20. `rules[].owner` は owner に対する glob として評価可能な文字列であること。
+21. `GHAUTOSWITCH_CONFIG` に相対パスが指定された場合は、カレントディレクトリ基準の絶対パスへ変換して扱うこと。
+22. `GHAUTOSWITCH_CONFIG` 指定時も、設定ファイルおよび親ディレクトリの owner / permission / symlink 検査を実施すること。
 
 ## 9. 非機能要件
 
@@ -248,6 +346,11 @@ rules:
 - `gh` 側の認証状態を信頼源とし、切替可否は `gh auth status` / `gh auth switch` の結果で判断すること。[cite:6][cite:25]
 - remote URL に password が含まれる場合、出力上は `https://user:***@host/owner/repo.git` の形式で password のみをマスクすること。
 - userinfo の password component は credential として扱い、`--verbose` および `--json` を含む全出力でマスクすること。userinfo の username component は `url_user` として扱ってよい。
+- userinfo の username component が 40 文字以上、または `ghp_`, `github_pat_`, `gho_`, `ghu_`, `ghs_`, `ghr_` で始まる場合は token らしい値として扱い、出力上は `***` にマスクすること。
+- `print-env` の出力は shell injection の影響を受けないよう、host validation と shell quote を必須とすること。
+- `exec` は子プロセス終了まで host 単位の lock を保持すること。ただし `gh` の active account は host-global な状態であるため、本ツールを介さない外部プロセスにより変更され得る制約を README に明記すること。
+- `exec` は shell を介して子プロセスを起動してはならないこと。
+- `gh` subprocess へ渡す環境変数は原則として親プロセスから継承してよいが、`GH_HOST` は対象 host で上書きし、token 系環境変数は検出時点で fail closed すること。
 
 ### 9.3 パフォーマンス
 
@@ -264,15 +367,66 @@ rules:
 
 | 条件 | 動作 |
 |---|---|
-| Git リポジトリではない | エラー終了 |
-| 指定 remote が存在しない | エラー終了 |
-| remote URL を解釈できない | エラー終了 |
+| Git リポジトリではない | 終了コード 1 でエラー終了 |
+| 指定 remote が存在しない | 終了コード 1 でエラー終了 |
+| remote URL を解釈できない | 終了コード 1 でエラー終了 |
 | rule 未一致かつ `on_unmatched=error` | 終了コード 4 でエラー終了 |
-| rule 未一致かつ `on_unmatched=noop` | 正常終了。ただし account / rule は未解決として扱う |
-| 対象 host に未ログイン | エラー終了[cite:6] |
-| 対象 account が `gh` に存在しない | エラー終了[cite:25] |
-| `gh auth switch` 失敗 | エラー終了[cite:25] |
+| rule 未一致かつ `on_unmatched=noop` | `resolve` / `switch` / `print-env` は正常終了。ただし account / rule は未解決として扱う |
+| `exec` で rule 未一致かつ `--allow-unmatched` なし | 終了コード 4 でエラー終了 |
+| 設定ファイルが存在しない | 終了コード 2 でエラー終了。ただし `init` は除く |
+| 設定ファイルが不正 | 終了コード 2 でエラー終了 |
+| `init` で設定ファイルが既に存在し、`--force` なし | 終了コード 2 でエラー終了 |
+| 設定ファイルまたは親ディレクトリの permission / owner / symlink が不正 | 終了コード 2 でエラー終了 |
+| token 環境変数が存在する状態で `switch` / `exec` / `check` を実行 | 終了コード 3 でエラー終了 |
+| 対象 host に未ログイン | 終了コード 3 でエラー終了[cite:6] |
+| 対象 account が `gh` に存在しない | 終了コード 3 でエラー終了[cite:25] |
+| `gh auth switch` 失敗 | 終了コード 3 でエラー終了[cite:25] |
+| `gh` コマンドが見つからない | 終了コード 1 でエラー終了 |
+| 排他 lock の取得 timeout | 終了コード 1 でエラー終了 |
+| `exec --` 以降のコマンドが空 | 終了コード 1 でエラー終了 |
+| `exec` の子プロセス起動に失敗 | 終了コード 1 でエラー終了 |
+| サブコマンドに対応しないオプションが指定された | 終了コード 1 でエラー終了 |
 | `exec` の子プロセスが失敗 | 子プロセスの終了コードを返す |
+
+`--json` 指定時の `error.code` は以下のいずれかとする。
+
+- `not_git_repository`
+- `remote_not_found`
+- `remote_url_unparseable`
+- `config_not_found`
+- `config_invalid`
+- `unmatched_rule`
+- `token_env_present`
+- `host_unauthenticated`
+- `account_unavailable`
+- `gh_not_found`
+- `gh_switch_failed`
+- `lock_timeout`
+- `exec_command_empty`
+- `exec_spawn_failed`
+- `invalid_arguments`
+- `internal_error`
+
+`error.code` と終了コードの対応は以下を基本とする。
+
+| `error.code` | 終了コード |
+|---|---:|
+| `not_git_repository` | 1 |
+| `remote_not_found` | 1 |
+| `remote_url_unparseable` | 1 |
+| `config_not_found` | 2 |
+| `config_invalid` | 2 |
+| `unmatched_rule` | 4 |
+| `token_env_present` | 3 |
+| `host_unauthenticated` | 3 |
+| `account_unavailable` | 3 |
+| `gh_not_found` | 1 |
+| `gh_switch_failed` | 3 |
+| `lock_timeout` | 1 |
+| `exec_command_empty` | 1 |
+| `exec_spawn_failed` | 1 |
+| `invalid_arguments` | 1 |
+| `internal_error` | 1 |
 
 ## 11. インターフェース要件
 
@@ -293,7 +447,7 @@ ghautoswitch check --json
 - `1`: 一般エラー
 - `2`: 設定エラー
 - `3`: 認証エラー
-- `4`: rule 未一致（`on_unmatched=error` の場合のみ）
+- `4`: rule 未一致（`on_unmatched=error`、または `exec` で rule 未一致かつ `--allow-unmatched` なしの場合）
 
 ## 12. 受入基準
 
@@ -308,8 +462,19 @@ ghautoswitch check --json
 7. `print-env` で `GH_HOST` を適切に出力できること。[cite:4]
 8. 設定ファイルがユーザーディレクトリ配下のグローバル設定として読み込まれること。
 9. 秘匿情報がログに出力されないこと。
-10. `on_unmatched=noop` の場合、rule 未一致でも終了コード 0 で account / rule 未解決として扱われること。
-11. `exec` は切替後に子プロセスを実行し、子プロセスの終了コードを返すこと。
+10. `on_unmatched=noop` の場合、`resolve` / `switch` / `print-env` は rule 未一致でも終了コード 0 で account / rule 未解決として扱われること。
+11. `exec` は rule 未一致時、`--allow-unmatched` がない限り子プロセスを実行せず終了コード 4 で失敗すること。
+12. `exec` は切替後に shell を介さず子プロセスを実行し、子プロセスの終了コードを返すこと。
+13. `exec` は子プロセス終了まで host 単位の lock を保持すること。
+14. `remote_url` glob が 7.2.1 の正規化 remote URL に対して照合されること。
+15. `print-env` が `export GH_HOST='github.com'` 形式で shell-safe な出力を行うこと。
+16. `GH_TOKEN` 等の token 環境変数が存在する場合、`switch` / `exec` / `check` が終了コード 3 で失敗すること。
+17. `gh auth switch` 呼び出しが `--hostname` と `--user` を明示し、対話プロンプトに依存しないこと。
+18. `init` が既存設定を既定では上書きせず、作成時に `0600` の設定ファイルを生成すること。
+19. 設定ファイルの未知キー、symlink、group/world writable permission を設定エラーとして検出できること。
+20. `--json` の未解決値が `null` で出力され、エラー時に `error.code` と `error.message` を含むこと。
+21. token らしい `url_user` が JSON、verbose、人間向け出力で `***` としてマスクされること。
+22. `check` が Git リポジトリ外でも実行でき、`--remote` 指定を一般エラーとして扱うこと。
 
 ## 13. 実装方針
 
