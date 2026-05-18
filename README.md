@@ -40,7 +40,14 @@ rules:
     host: github.com
     owner: your-company
     account: work-login
+
+  - name: github-default
+    host: github.com
+    default: true
+    account: your-login
 ```
+
+Set `default: true` on a rule to use it as the lowest-priority fallback for that host. More specific rules using `url_user`, `remote_url`, or `owner` still take precedence.
 
 Config files must not be symlinks or group/world writable. Files created by `gh-auto-switch init` use `0600`; the default config directory uses `0700`.
 

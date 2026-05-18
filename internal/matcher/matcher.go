@@ -37,18 +37,23 @@ func ruleRank(r config.Rule, remote parser.Remote) (int, bool) {
 		return 0, false
 	}
 	rank := 1
+	if r.Default {
+		rank = 0
+	}
 	if r.URLUser != "" {
 		if r.URLUser != remote.URLUser {
 			return 0, false
 		}
-		rank = 4
+		if !r.Default {
+			rank = 4
+		}
 	}
 	if r.RemoteURL != "" {
 		ok, err := path.Match(r.RemoteURL, remote.NormalizedURL)
 		if err != nil || !ok {
 			return 0, false
 		}
-		if rank < 3 {
+		if !r.Default && rank < 3 {
 			rank = 3
 		}
 	}
@@ -57,7 +62,7 @@ func ruleRank(r config.Rule, remote parser.Remote) (int, bool) {
 		if err != nil || !ok {
 			return 0, false
 		}
-		if rank < 2 {
+		if !r.Default && rank < 2 {
 			rank = 2
 		}
 	}

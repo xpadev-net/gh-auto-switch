@@ -32,6 +32,7 @@ type Defaults struct {
 type Rule struct {
 	Name      string `yaml:"name"`
 	Host      string `yaml:"host"`
+	Default   bool   `yaml:"default"`
 	URLUser   string `yaml:"url_user"`
 	RemoteURL string `yaml:"remote_url"`
 	Owner     string `yaml:"owner"`
@@ -211,6 +212,11 @@ rules:
     host: github.com
     owner: your-company
     account: work-login
+
+  - name: github-default
+    host: github.com
+    default: true
+    account: your-login
 `, "\n")
 }
 
