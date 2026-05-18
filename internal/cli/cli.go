@@ -19,6 +19,7 @@ import (
 	"github.com/xpadev-net/gh-auto-switch/internal/output"
 	"github.com/xpadev-net/gh-auto-switch/internal/parser"
 	"github.com/xpadev-net/gh-auto-switch/internal/procenv"
+	"github.com/xpadev-net/gh-auto-switch/internal/shellhook"
 )
 
 type globals struct {
@@ -67,6 +68,8 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		return cmdCheck(args[1:], g, stdout, stderr)
 	case "init":
 		return cmdInit(args[1:], g, stdout, stderr)
+	case "install":
+		return cmdInstall(args[1:], g, stdout, stderr)
 	default:
 		return 1, apperr.New(apperr.InvalidArguments, "unknown subcommand")
 	}
@@ -319,6 +322,34 @@ func cmdInit(args []string, g globals, stdout, stderr io.Writer) (int, error) {
 		writeResult(stdout, g, res)
 	} else {
 		fmt.Fprintf(stdout, "created: %s\n", v)
+	}
+	return 0, nil
+}
+
+func cmdInstall(args []string, g globals, stdout, stderr io.Writer) (int, error) {
+	fs := flagSet("install")
+	shellName := fs.String("shell", "", "")
+	printOnly := fs.Bool("print", false, "")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
+		return 1, apperr.New(apperr.InvalidArguments, "invalid install arguments")
+	}
+	path, snippet, err := shellhook.Install(shellhook.Options{Shell: *shellName, PrintOnly: *printOnly})
+	if err != nil {
+		return 1, err
+	}
+	if *printOnly {
+		if g.json {
+			writeResult(stdout, g, output.Result{Matched: true, Action: "none"})
+			return 0, nil
+		}
+		fmt.Fprint(stdout, snippet)
+		return 0, nil
+	}
+	res := output.Result{Matched: true, Action: "install_created"}
+	if g.json {
+		writeResult(stdout, g, res)
+	} else {
+		fmt.Fprintf(stdout, "installed: %s\n", path)
 	}
 	return 0, nil
 }

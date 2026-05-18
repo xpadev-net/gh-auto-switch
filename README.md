@@ -54,9 +54,13 @@ gh-auto-switch switch --remote upstream
 gh-auto-switch exec -- gh pr list
 eval "$(gh-auto-switch print-env)"
 gh-auto-switch check --json
+gh-auto-switch install
+gh-auto-switch install --shell fish --print
 ```
 
 `print-env` only prints `GH_HOST`; it does not switch accounts. `switch` changes `gh` state for the target host but cannot change the parent shell environment.
+
+`install` adds a managed `gh` shell function to bash, zsh, or fish so normal `gh ...` commands run `gh-auto-switch switch` first. It updates `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish` by default; use `--print` to print the hook without writing files.
 
 ## Authentication Notes
 

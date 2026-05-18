@@ -81,7 +81,8 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 5. Git リポジトリ判定および remote URL 取得を必要とするサブコマンドは `resolve` / `switch` / `exec` / `print-env` とすること。
 6. `check` は設定ファイル全体と `gh` 認証状態を検査するサブコマンドであり、Git リポジトリ外でも実行できること。
 7. `init` は設定ファイル生成のみを行うサブコマンドであり、Git リポジトリ外でも実行できること。
-8. `--remote <name>` は `resolve` / `switch` / `exec` / `print-env` に適用できること。`check` / `init` では指定不可とし、指定された場合は一般エラーとして扱うこと。
+8. `install` は shell hook 設定のみを行うサブコマンドであり、Git リポジトリ外でも実行できること。
+9. `--remote <name>` は `resolve` / `switch` / `exec` / `print-env` に適用できること。`check` / `init` / `install` では指定不可とし、指定された場合は一般エラーとして扱うこと。
 
 ### 7.2 remote URL 解析
 
@@ -195,6 +196,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 | `print-env` | shell 連携用に `GH_HOST` 等の環境変数を出力する |
 | `check` | 設定ファイルと `gh` 認証状態の整合性を検査する |
 | `init` | 設定ファイルの雛形を生成する |
+| `install` | bash / zsh / fish に `gh` 自動切替 hook を設定する |
 
 ### 7.7 `exec` の動作
 
@@ -242,6 +244,16 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 6. 生成する雛形は `version`, `defaults`, 空でない `rules` 例、コメントによる最小説明を含むこと。
 7. `init --print` が指定された場合はファイルを書き込まず、雛形を標準出力へ出力すること。
 
+### 7.10.1 `install` の動作
+
+1. `install` は bash / zsh / fish の shell 設定ファイルに `gh` 関数 hook を追加または更新できること。
+2. `--shell bash|zsh|fish` により対象 shell を明示できること。未指定の場合は `SHELL` 環境変数から判定すること。
+3. 既定の書き込み先は bash が `~/.bashrc`、zsh が `~/.zshrc`、fish が `~/.config/fish/config.fish` とすること。
+4. hook は `gh-auto-switch switch` を実行し、成功した場合のみ `command gh` で元の `gh` コマンドを実行すること。
+5. `gh-auto-switch switch` が失敗した場合、元の `gh` コマンドは実行しないこと。
+6. hook は管理コメントブロックで囲み、再実行時は既存ブロックを置換して重複追加しないこと。
+7. `install --print` が指定された場合はファイルを書き込まず、hook を標準出力へ出力すること。
+
 ### 7.11 出力要件
 
 1. 人間向け出力は標準出力に要点を簡潔に表示すること。
@@ -253,7 +265,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 7. 未解決値は JSON では `null` として表現すること。空文字列で未解決を表現してはならない。
 8. `matched` は boolean とすること。
 9. `rule` は一致した rule の `name` 文字列、未一致時は `null` とし、rule object は出力しないこと。
-10. `action` は `none`, `resolved`, `switched`, `exec`, `unmatched_noop`, `check_passed`, `init_created` のいずれかとすること。
+10. `action` は `none`, `resolved`, `switched`, `exec`, `unmatched_noop`, `check_passed`, `init_created`, `install_created` のいずれかとすること。
 11. エラー時の標準出力には JSON 以外を混在させないこと。人間向けエラーは標準エラーへ出力すること。
 12. `url_user` は出力用の値とし、token らしい値の場合は `***`、存在しない場合は `null` とすること。
 13. 内部照合に利用した生の `url_user` は JSON、verbose、人間向け出力に含めてはならないこと。
@@ -264,6 +276,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
    - `print-env`: `resolved` または `unmatched_noop`
    - `check`: `check_passed`
    - `init`: `init_created`。`init --print` は `none`
+   - `install`: `install_created`。`install --print` は `none`
 
 ## 8. 設定要件
 
