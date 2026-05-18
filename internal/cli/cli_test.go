@@ -441,6 +441,120 @@ func TestArgumentErrors(t *testing.T) {
 	}
 }
 
+func TestInstallPrintsShellSnippets(t *testing.T) {
+	tests := []struct {
+		name     string
+		shell    string
+		contains []string
+	}{
+		{
+			name:  "bash",
+			shell: "bash",
+			contains: []string{
+				"# >>> gh-auto-switch hook >>>",
+				"gh-auto-switch switch >/dev/null || return $?",
+				"command gh \"$@\"",
+			},
+		},
+		{
+			name:  "zsh",
+			shell: "zsh",
+			contains: []string{
+				"# >>> gh-auto-switch hook >>>",
+				"gh-auto-switch switch >/dev/null || return $?",
+				"command gh \"$@\"",
+			},
+		},
+		{
+			name:  "fish",
+			shell: "fish",
+			contains: []string{
+				"# >>> gh-auto-switch hook >>>",
+				"gh-auto-switch switch >/dev/null; or return $status",
+				"command gh $argv",
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			code := Run([]string{"install", "--print", "--shell", tc.shell}, &out, &errOut)
+			if code != 0 {
+				t.Fatalf("Run() code=%d stderr=%s stdout=%s", code, errOut.String(), out.String())
+			}
+			for _, want := range tc.contains {
+				if !strings.Contains(out.String(), want) {
+					t.Fatalf("stdout missing %q:\n%s", want, out.String())
+				}
+			}
+		})
+	}
+}
+
+func TestInstallWritesAndReplacesManagedBlock(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	rc := filepath.Join(tmp, ".zshrc")
+	if err := os.WriteFile(rc, []byte("before\n# >>> gh-auto-switch hook >>>\nold\n# <<< gh-auto-switch hook <<<\nafter\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	code := Run([]string{"install", "--shell", "zsh"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("Run() code=%d stderr=%s stdout=%s", code, errOut.String(), out.String())
+	}
+	if out.String() != "installed: "+rc+"\n" {
+		t.Fatalf("stdout = %q", out.String())
+	}
+	data, err := os.ReadFile(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	if strings.Count(got, "# >>> gh-auto-switch hook >>>") != 1 {
+		t.Fatalf("managed block duplicated:\n%s", got)
+	}
+	if strings.Contains(got, "\nold\n") {
+		t.Fatalf("old managed block was not replaced:\n%s", got)
+	}
+	if !strings.Contains(got, "before\n") || !strings.Contains(got, "after\n") {
+		t.Fatalf("unmanaged content not preserved:\n%s", got)
+	}
+}
+
+func TestInstallDetectsShellFromEnvAndCreatesFishConfig(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("SHELL", "/opt/homebrew/bin/fish")
+	var out, errOut bytes.Buffer
+	code := Run([]string{"install"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("Run() code=%d stderr=%s stdout=%s", code, errOut.String(), out.String())
+	}
+	path := filepath.Join(tmp, ".config", "fish", "config.fish")
+	if out.String() != "installed: "+path+"\n" {
+		t.Fatalf("stdout = %q", out.String())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "command gh $argv") {
+		t.Fatalf("fish hook not written:\n%s", string(data))
+	}
+}
+
+func TestInstallRejectsUnsupportedShell(t *testing.T) {
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--json", "install", "--shell", "csh"}, &out, &errOut)
+	if code != 1 {
+		t.Fatalf("Run() code=%d stderr=%s stdout=%s", code, errOut.String(), out.String())
+	}
+	if !strings.Contains(out.String(), `"code":"invalid_arguments"`) {
+		t.Fatalf("stdout = %s", out.String())
+	}
+}
+
 func TestResolveUnmatchedNoopJSONUsesNulls(t *testing.T) {
 	tmp := t.TempDir()
 	writeConfig(t, tmp, `
