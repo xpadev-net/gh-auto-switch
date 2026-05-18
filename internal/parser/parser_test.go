@@ -36,6 +36,7 @@ func TestParseRejectsUnsupportedURLs(t *testing.T) {
 		"https://github.com:443/owner/repo.git",
 		"ssh://git@github.com:22/owner/repo.git",
 		"https://github.com/owner/repo.git?x=1",
+		"https://bad_host/owner/repo.git",
 		"https://github.com/owner/repo/extra.git",
 		"https://github.com/owner/repo/",
 		"https://github.com/owner/repo.git.git",

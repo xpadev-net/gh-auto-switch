@@ -2,15 +2,17 @@ package ghadapter
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
-	"strings"
+	"time"
 
 	"github.com/xpadev-net/gh-auto-switch/internal/apperr"
+	"github.com/xpadev-net/gh-auto-switch/internal/procenv"
 )
 
-var TokenEnvNames = []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}
+const commandTimeout = 15 * time.Second
 
 type Account struct {
 	Login       string `json:"login"`
@@ -25,8 +27,8 @@ type Status struct {
 }
 
 func CheckTokenEnv() error {
-	for _, name := range TokenEnvNames {
-		if os.Getenv(name) != "" {
+	for _, name := range procenv.TokenEnvNames {
+		if _, ok := os.LookupEnv(name); ok {
 			return apperr.New(apperr.TokenEnvPresent, name+" is set")
 		}
 	}
@@ -37,12 +39,17 @@ func StatusFor(host string) (Status, error) {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return Status{}, apperr.New(apperr.GHNotFound, "gh command not found")
 	}
-	cmd := exec.Command("gh", "auth", "status", "--hostname", host, "--json", "hosts")
-	cmd.Env = withGHHost(os.Environ(), host)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gh", "auth", "status", "--hostname", host, "--json", "hosts")
+	cmd.Env = procenv.WithGHHost(os.Environ(), host)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return Status{}, apperr.New(apperr.HostUnauthenticated, "gh auth status timed out")
+		}
 		return Status{}, apperr.New(apperr.HostUnauthenticated, "host is not authenticated")
 	}
 	var raw struct {
@@ -89,28 +96,16 @@ func Switch(host, account string) error {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return apperr.New(apperr.GHNotFound, "gh command not found")
 	}
-	cmd := exec.Command("gh", "auth", "switch", "--hostname", host, "--user", account)
-	cmd.Env = withGHHost(os.Environ(), host)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gh", "auth", "switch", "--hostname", host, "--user", account)
+	cmd.Env = procenv.WithGHHost(os.Environ(), host)
 	cmd.Stdin = nil
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = "gh auth switch failed"
+		if ctx.Err() == context.DeadlineExceeded {
+			return apperr.New(apperr.GHSwitchFailed, "gh auth switch timed out")
 		}
-		return apperr.New(apperr.GHSwitchFailed, msg)
+		return apperr.New(apperr.GHSwitchFailed, "gh auth switch failed")
 	}
 	return nil
-}
-
-func withGHHost(env []string, host string) []string {
-	out := make([]string, 0, len(env)+1)
-	for _, e := range env {
-		if strings.HasPrefix(e, "GH_HOST=") {
-			continue
-		}
-		out = append(out, e)
-	}
-	return append(out, "GH_HOST="+host)
 }

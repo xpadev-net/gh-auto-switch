@@ -18,6 +18,7 @@ import (
 	"github.com/xpadev-net/gh-auto-switch/internal/matcher"
 	"github.com/xpadev-net/gh-auto-switch/internal/output"
 	"github.com/xpadev-net/gh-auto-switch/internal/parser"
+	"github.com/xpadev-net/gh-auto-switch/internal/procenv"
 )
 
 type globals struct {
@@ -114,6 +115,9 @@ func cmdResolve(args []string, g globals, stdout, stderr io.Writer) (int, error)
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
 		return 1, apperr.New(apperr.InvalidArguments, "invalid resolve arguments")
 	}
+	if *remoteFlag != "" && !config.ValidRemoteName(*remoteFlag) {
+		return 1, apperr.New(apperr.InvalidArguments, "remote name is invalid")
+	}
 	r, err := resolve(*remoteFlag, g, stderr)
 	if err != nil {
 		return 1, err
@@ -134,6 +138,9 @@ func cmdSwitch(args []string, g globals, stdout, stderr io.Writer) (int, error) 
 	remoteFlag := fs.String("remote", "", "")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
 		return 1, apperr.New(apperr.InvalidArguments, "invalid switch arguments")
+	}
+	if *remoteFlag != "" && !config.ValidRemoteName(*remoteFlag) {
+		return 1, apperr.New(apperr.InvalidArguments, "remote name is invalid")
 	}
 	if err := ghadapter.CheckTokenEnv(); err != nil {
 		return 3, err
@@ -176,6 +183,9 @@ func cmdExec(args []string, g globals, stdout, stderr io.Writer) (int, error) {
 	if err := fs.Parse(pre); err != nil || fs.NArg() != 0 {
 		return 1, apperr.New(apperr.InvalidArguments, "invalid exec arguments")
 	}
+	if *remoteFlag != "" && !config.ValidRemoteName(*remoteFlag) {
+		return 1, apperr.New(apperr.InvalidArguments, "remote name is invalid")
+	}
 	if len(cmdArgs) == 0 {
 		return 1, apperr.New(apperr.ExecCommandEmpty, "exec command is empty")
 	}
@@ -216,9 +226,15 @@ func cmdPrintEnv(args []string, g globals, stdout, stderr io.Writer) (int, error
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
 		return 1, apperr.New(apperr.InvalidArguments, "invalid print-env arguments")
 	}
+	if *remoteFlag != "" && !config.ValidRemoteName(*remoteFlag) {
+		return 1, apperr.New(apperr.InvalidArguments, "remote name is invalid")
+	}
 	r, err := resolve(*remoteFlag, g, stderr)
 	if err != nil {
 		return 1, err
+	}
+	if !r.match.Matched && r.cfg.Defaults.OnUnmatched == "error" {
+		return 4, apperr.New(apperr.UnmatchedRule, "no matching rule")
 	}
 	if g.json {
 		res := resultFor(r, "resolved")
@@ -251,16 +267,28 @@ func cmdCheck(args []string, g globals, stdout, stderr io.Writer) (int, error) {
 		}
 		hosts[r.Host][r.Account] = true
 	}
+	var problems []string
+	problemCode := apperr.HostUnauthenticated
 	for _, host := range sortedKeys(hosts) {
 		st, err := ghadapter.StatusFor(host)
 		if err != nil {
-			return 3, err
+			app := apperr.From(err)
+			problems = append(problems, host+": "+app.Message)
+			problemCode = app.Code
+			continue
 		}
-		for account := range hosts[host] {
+		for _, account := range sortedAccountKeys(hosts[host]) {
 			if err := ghadapter.EnsureAccount(st, account); err != nil {
-				return 3, err
+				app := apperr.From(err)
+				problems = append(problems, host+"/"+account+": "+app.Message)
+				if problemCode == apperr.HostUnauthenticated {
+					problemCode = app.Code
+				}
 			}
 		}
+	}
+	if len(problems) > 0 {
+		return 3, apperr.New(problemCode, "check failed: "+strings.Join(problems, "; "))
 	}
 	res := output.Result{Matched: true, Action: "check_passed"}
 	writeResult(stdout, g, res)
@@ -279,6 +307,10 @@ func cmdInit(args []string, g globals, stdout, stderr io.Writer) (int, error) {
 		return 2, err
 	}
 	if *printOnly {
+		if g.json {
+			writeResult(stdout, g, output.Result{Matched: true, Action: "none"})
+			return 0, nil
+		}
 		fmt.Fprint(stdout, v)
 		return 0, nil
 	}
@@ -367,7 +399,7 @@ func writeResult(stdout io.Writer, g globals, res output.Result) {
 
 func runChild(args []string, host string, stdout, stderr io.Writer) (int, error) {
 	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Env = withGHHost(os.Environ(), host)
+	cmd.Env = procenv.WithGHHost(os.Environ(), host)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -378,17 +410,6 @@ func runChild(args []string, host string, stdout, stderr io.Writer) (int, error)
 		return 1, apperr.Wrap(apperr.ExecSpawnFailed, "could not start exec command", err)
 	}
 	return 0, nil
-}
-
-func withGHHost(env []string, host string) []string {
-	out := make([]string, 0, len(env)+1)
-	for _, e := range env {
-		if strings.HasPrefix(e, "GH_HOST=") {
-			continue
-		}
-		out = append(out, e)
-	}
-	return append(out, "GH_HOST="+host)
 }
 
 func indexOf(xs []string, s string) int {
@@ -405,6 +426,15 @@ func shellQuoteValue(s string) string {
 }
 
 func sortedKeys(m map[string]map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedAccountKeys(m map[string]bool) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

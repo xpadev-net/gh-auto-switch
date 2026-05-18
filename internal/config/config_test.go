@@ -28,3 +28,14 @@ func TestValidateNormalizesDefaultsAndHost(t *testing.T) {
 		t.Fatalf("host not normalized: %q", cfg.Rules[0].Host)
 	}
 }
+
+func TestValidateRejectsOptionLikeRemoteName(t *testing.T) {
+	cfg := Config{
+		Version:  1,
+		Defaults: Defaults{Remote: "-x"},
+		Rules:    []Rule{{Name: "r", Host: "github.com", Account: "u"}},
+	}
+	if err := Validate(&cfg); err == nil {
+		t.Fatalf("Validate() succeeded")
+	}
+}

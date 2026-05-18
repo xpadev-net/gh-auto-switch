@@ -131,11 +131,21 @@ func NormalizeHost(host string) (string, error) {
 		return "", apperr.New(apperr.RemoteURLUnparseable, "host is invalid")
 	}
 	for _, label := range strings.Split(ascii, ".") {
-		if label == "" || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") || !validDNSLabel(label) {
 			return "", apperr.New(apperr.RemoteURLUnparseable, "host is invalid")
 		}
 	}
 	return ascii, nil
+}
+
+func validDNSLabel(label string) bool {
+	for _, r := range label {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func validPathPart(s string) bool {

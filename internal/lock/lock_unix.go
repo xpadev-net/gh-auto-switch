@@ -3,6 +3,7 @@
 package lock
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,10 +20,17 @@ type Lock struct {
 
 func Acquire(host string, timeout time.Duration) (*Lock, error) {
 	dir := baseDir()
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return nil, apperr.Wrap(apperr.InternalError, "could not create lock directory", err)
+	if _, err := os.Lstat(dir); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, apperr.Wrap(apperr.InternalError, "could not stat lock directory", err)
+		}
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return nil, apperr.Wrap(apperr.InternalError, "could not create lock directory", err)
+		}
+		if err := os.Chmod(dir, 0700); err != nil {
+			return nil, apperr.Wrap(apperr.InternalError, "could not secure lock directory", err)
+		}
 	}
-	_ = os.Chmod(dir, 0700)
 	if err := validateDir(dir); err != nil {
 		return nil, err
 	}

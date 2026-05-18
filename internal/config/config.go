@@ -9,7 +9,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"unicode"
 
 	"gopkg.in/yaml.v3"
@@ -93,7 +92,7 @@ func Validate(cfg *Config) error {
 	if cfg.Defaults.OnUnauthenticated == "" {
 		cfg.Defaults.OnUnauthenticated = "error"
 	}
-	if !validSimple(cfg.Defaults.Remote) {
+	if !ValidRemoteName(cfg.Defaults.Remote) {
 		return apperr.New(apperr.ConfigInvalid, "defaults.remote is invalid")
 	}
 	if cfg.Defaults.OnUnmatched != "noop" && cfg.Defaults.OnUnmatched != "error" {
@@ -152,6 +151,10 @@ func validSimple(s string) bool {
 	return true
 }
 
+func ValidRemoteName(s string) bool {
+	return validSimple(s) && !strings.HasPrefix(s, "-")
+}
+
 func checkSecure(path string, allowMissingFile bool) error {
 	parent := filepath.Dir(path)
 	if err := checkPath(parent, true); err != nil {
@@ -182,7 +185,7 @@ func checkPath(path string, wantDir bool) error {
 	if info.Mode().Perm()&0022 != 0 {
 		return apperr.New(apperr.ConfigInvalid, fmt.Sprintf("%s must not be group/world writable", path))
 	}
-	if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
+	if ownerInvalid(info) {
 		return apperr.New(apperr.ConfigInvalid, fmt.Sprintf("%s owner is invalid", path))
 	}
 	return nil
@@ -228,23 +231,54 @@ func Init(printOnly, force bool) (string, error) {
 	if err := checkSecure(path, true); err != nil {
 		return "", err
 	}
-	flags := os.O_WRONLY | os.O_CREATE
-	if force {
-		flags |= os.O_TRUNC
-	} else {
-		flags |= os.O_EXCL
+	if err := writeFileAtomic(path, content, force); err != nil {
+		return "", err
 	}
-	f, err := os.OpenFile(path, flags, 0600)
-	if err != nil {
-		if errors.Is(err, fs.ErrExist) {
-			return "", apperr.New(apperr.ConfigInvalid, "config file already exists")
-		}
-		return "", apperr.Wrap(apperr.ConfigInvalid, "could not create config file", err)
-	}
-	defer f.Close()
-	if _, err := f.WriteString(content); err != nil {
-		return "", apperr.Wrap(apperr.ConfigInvalid, "could not write config file", err)
-	}
-	_ = f.Chmod(0600)
 	return path, nil
+}
+
+func writeFileAtomic(path, content string, force bool) error {
+	parent := filepath.Dir(path)
+	tmp, err := os.CreateTemp(parent, ".config.yml.*")
+	if err != nil {
+		return apperr.Wrap(apperr.ConfigInvalid, "could not create temporary config file", err)
+	}
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err := tmp.Chmod(0600); err != nil {
+		_ = tmp.Close()
+		return apperr.Wrap(apperr.ConfigInvalid, "could not secure temporary config file", err)
+	}
+	if _, err := tmp.WriteString(content); err != nil {
+		_ = tmp.Close()
+		return apperr.Wrap(apperr.ConfigInvalid, "could not write config file", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return apperr.Wrap(apperr.ConfigInvalid, "could not sync config file", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return apperr.Wrap(apperr.ConfigInvalid, "could not close config file", err)
+	}
+	if force {
+		if err := os.Rename(tmpPath, path); err != nil {
+			return apperr.Wrap(apperr.ConfigInvalid, "could not replace config file", err)
+		}
+		cleanup = false
+		return nil
+	}
+	if err := os.Link(tmpPath, path); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return apperr.New(apperr.ConfigInvalid, "config file already exists")
+		}
+		return apperr.Wrap(apperr.ConfigInvalid, "could not create config file", err)
+	}
+	_ = os.Remove(tmpPath)
+	cleanup = false
+	return nil
 }
