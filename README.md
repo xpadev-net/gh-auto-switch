@@ -4,6 +4,16 @@
 
 ## Build
 
+Install the latest version:
+
+```bash
+go install github.com/xpadev-net/gh-auto-switch/cmd/gh-auto-switch@master
+```
+
+Make sure your Go binary directory, usually `$(go env GOPATH)/bin`, is on `PATH`.
+
+Build from a local checkout:
+
 ```bash
 go build ./cmd/gh-auto-switch
 ```
