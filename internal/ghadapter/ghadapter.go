@@ -64,7 +64,7 @@ func StatusFor(host string) (Status, error) {
 	}
 	st := Status{Accounts: accounts}
 	for _, a := range accounts {
-		if a.Login == "" || a.State == "" {
+		if a.Login == "" || a.State == "" || a.TokenSource == "" {
 			return Status{}, apperr.New(apperr.HostUnauthenticated, "gh auth status has unknown account format")
 		}
 		if a.State != "success" {
@@ -85,7 +85,7 @@ func StatusFor(host string) (Status, error) {
 
 func EnsureAccount(st Status, account string) error {
 	for _, a := range st.Accounts {
-		if a.Login == account && a.State == "success" {
+		if a.Login == account && a.State == "success" && a.TokenSource != "" {
 			return nil
 		}
 	}

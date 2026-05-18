@@ -224,10 +224,17 @@ func Init(printOnly, force bool) (string, error) {
 		return content, nil
 	}
 	parent := filepath.Dir(path)
-	if err := os.MkdirAll(parent, 0700); err != nil {
-		return "", apperr.Wrap(apperr.ConfigInvalid, "could not create config directory", err)
+	if _, err := os.Lstat(parent); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", apperr.Wrap(apperr.ConfigInvalid, "could not stat config directory", err)
+		}
+		if err := os.MkdirAll(parent, 0700); err != nil {
+			return "", apperr.Wrap(apperr.ConfigInvalid, "could not create config directory", err)
+		}
+		if err := os.Chmod(parent, 0700); err != nil {
+			return "", apperr.Wrap(apperr.ConfigInvalid, "could not secure config directory", err)
+		}
 	}
-	_ = os.Chmod(parent, 0700)
 	if err := checkSecure(path, true); err != nil {
 		return "", err
 	}
@@ -269,6 +276,9 @@ func writeFileAtomic(path, content string, force bool) error {
 		if err := os.Rename(tmpPath, path); err != nil {
 			return apperr.Wrap(apperr.ConfigInvalid, "could not replace config file", err)
 		}
+		if err := syncDir(parent); err != nil {
+			return err
+		}
 		cleanup = false
 		return nil
 	}
@@ -279,6 +289,9 @@ func writeFileAtomic(path, content string, force bool) error {
 		return apperr.Wrap(apperr.ConfigInvalid, "could not create config file", err)
 	}
 	_ = os.Remove(tmpPath)
+	if err := syncDir(parent); err != nil {
+		return err
+	}
 	cleanup = false
 	return nil
 }

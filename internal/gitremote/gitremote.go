@@ -16,6 +16,9 @@ func RemoteURL(remote string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
 	if err := exec.CommandContext(ctx, "git", "rev-parse", "--is-inside-work-tree").Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", apperr.New(apperr.InternalError, "git rev-parse timed out")
+		}
 		return "", apperr.New(apperr.NotGitRepository, "not a git repository")
 	}
 	ctx, cancel = context.WithTimeout(context.Background(), commandTimeout)
@@ -25,6 +28,9 @@ func RemoteURL(remote string) (string, error) {
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", apperr.New(apperr.InternalError, "git remote get-url timed out")
+		}
 		return "", apperr.New(apperr.RemoteNotFound, "remote not found")
 	}
 	return strings.TrimSpace(string(out)), nil

@@ -186,11 +186,11 @@ func cmdExec(args []string, g globals, stdout, stderr io.Writer) (int, error) {
 	if *remoteFlag != "" && !config.ValidRemoteName(*remoteFlag) {
 		return 1, apperr.New(apperr.InvalidArguments, "remote name is invalid")
 	}
-	if len(cmdArgs) == 0 {
-		return 1, apperr.New(apperr.ExecCommandEmpty, "exec command is empty")
-	}
 	if err := ghadapter.CheckTokenEnv(); err != nil {
 		return 3, err
+	}
+	if len(cmdArgs) == 0 {
+		return 1, apperr.New(apperr.ExecCommandEmpty, "exec command is empty")
 	}
 	r, err := resolve(*remoteFlag, g, stderr)
 	if err != nil {
