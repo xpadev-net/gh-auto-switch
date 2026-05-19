@@ -49,6 +49,8 @@ rules:
 
 Set `default: true` on a rule to use it as the lowest-priority fallback for that host. More specific rules using `url_user`, `remote_url`, or `owner` still take precedence.
 
+Outside a Git repository, `switch` and the installed `gh` hook use only an unconditional rule marked `default: true` as the account fallback. A bare host-only rule is not used for this outside-repository fallback.
+
 Config files must not be symlinks or group/world writable. Files created by `gh-auto-switch init` use `0600`; the default config directory uses `0700`.
 
 ## Commands
