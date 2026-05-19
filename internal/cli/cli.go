@@ -184,7 +184,7 @@ func switchDefaultAccount(g globals, stdout io.Writer) (int, error) {
 	}
 	rule := config.DefaultRule(cfg)
 	if rule == nil {
-		return 1, apperr.New(apperr.NotGitRepository, "outside a git repository and no default rule configured")
+		return 1, apperr.New(apperr.NotGitRepository, "outside a git repository and no unconditional default: true rule configured")
 	}
 	l, err := lock.AcquireAuthStore(10 * time.Second)
 	if err != nil {
@@ -230,8 +230,8 @@ func cmdExec(args []string, g globals, stdout, stderr io.Writer) (int, error) {
 	}
 	r, err := resolve(*remoteFlag, g, stderr)
 	if err != nil {
-		// Installed hooks call `exec -- gh ...`; keep their outside-repo default-account behavior
-		// without broadening arbitrary `exec -- <cmd>` outside Git repositories.
+		// `exec -- gh ...` is the installed hook path. Preserve its outside-repo
+		// default-account behavior without broadening arbitrary `exec -- <cmd>`.
 		if apperr.From(err).Code == apperr.NotGitRepository && cmdArgs[0] == "gh" {
 			return execDefaultAccount(cmdArgs, stdout, stderr)
 		}
@@ -264,7 +264,7 @@ func execDefaultAccount(cmdArgs []string, stdout, stderr io.Writer) (int, error)
 	}
 	rule := config.DefaultRule(cfg)
 	if rule == nil {
-		return 1, apperr.New(apperr.NotGitRepository, "outside a git repository and no default rule configured")
+		return 1, apperr.New(apperr.NotGitRepository, "outside a git repository and no unconditional default: true rule configured")
 	}
 	l, err := lock.AcquireAuthStore(10 * time.Second)
 	if err != nil {

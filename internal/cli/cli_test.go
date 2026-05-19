@@ -192,7 +192,7 @@ exit 1
 	if !strings.Contains(out.String(), `"code":"not_git_repository"`) {
 		t.Fatalf("stdout = %s", out.String())
 	}
-	if !strings.Contains(out.String(), "no default rule configured") {
+	if !strings.Contains(out.String(), "no unconditional default: true rule configured") {
 		t.Fatalf("stdout missing default-rule message: %s", out.String())
 	}
 }
@@ -235,6 +235,43 @@ exit 1
 	code := Run([]string{"exec", "--", "gh", "api", "user"}, &out, &errOut)
 	if code != 9 {
 		t.Fatalf("Run() code=%d stderr=%s stdout=%s", code, errOut.String(), out.String())
+	}
+}
+
+func TestExecOutsideGitRepositoryDoesNotFallbackForNonGHCommand(t *testing.T) {
+	tmp := t.TempDir()
+	writeConfig(t, tmp, `
+version: 1
+rules:
+  - name: github-default
+    host: github.com
+    default: true
+    account: target
+`)
+	bin := filepath.Join(tmp, "bin")
+	if err := os.Mkdir(bin, 0755); err != nil {
+		t.Fatal(err)
+	}
+	childRan := filepath.Join(tmp, "child-ran")
+	writeExe(t, filepath.Join(bin, "git"), `#!/bin/sh
+if [ "$#" -eq 2 ] && [ "$1 $2" = "rev-parse --is-inside-work-tree" ]; then exit 1; fi
+exit 1
+`)
+	writeExe(t, filepath.Join(bin, "child"), `#!/bin/sh
+touch "`+childRan+`"
+exit 0
+`)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--json", "exec", "--", "child"}, &out, &errOut)
+	if code != 1 {
+		t.Fatalf("Run() code=%d stderr=%s stdout=%s", code, errOut.String(), out.String())
+	}
+	if !strings.Contains(out.String(), `"code":"not_git_repository"`) {
+		t.Fatalf("stdout = %s", out.String())
+	}
+	if _, err := os.Stat(childRan); !os.IsNotExist(err) {
+		t.Fatalf("child should not have run, stat err=%v", err)
 	}
 }
 
