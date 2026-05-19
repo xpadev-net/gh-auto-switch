@@ -44,6 +44,16 @@ func TestValidateRejectsOptionLikeRemoteName(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsDefaultRuleWithoutHost(t *testing.T) {
+	cfg := Config{
+		Version: 1,
+		Rules:   []Rule{{Name: "fallback", Default: true, Account: "u"}},
+	}
+	if err := Validate(&cfg); err == nil {
+		t.Fatalf("Validate() succeeded")
+	}
+}
+
 func TestLoadAcceptsDefaultRuleField(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "config.yml")
