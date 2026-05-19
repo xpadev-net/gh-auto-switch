@@ -87,7 +87,7 @@ func Snippet(sh Shell) string {
 		return strings.Join([]string{
 			beginMarker,
 			"function gh",
-			"    gh-auto-switch exec -- gh $argv",
+			"    gh-auto-switch exec --allow-unmatched-if-noop -- gh $argv",
 			"end",
 			endMarker,
 			"",
@@ -96,7 +96,7 @@ func Snippet(sh Shell) string {
 		return strings.Join([]string{
 			beginMarker,
 			"gh() {",
-			"    gh-auto-switch exec -- gh \"$@\"",
+			"    gh-auto-switch exec --allow-unmatched-if-noop -- gh \"$@\"",
 			"}",
 			endMarker,
 			"",

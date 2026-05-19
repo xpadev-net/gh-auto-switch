@@ -74,3 +74,5 @@ gh-auto-switch install --shell fish --print
 `switch`, `exec`, and `check` fail closed when `GH_TOKEN`, `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`, or `GITHUB_ENTERPRISE_TOKEN` is set. `GH_CONFIG_DIR` is inherited by subprocesses, so it affects which `gh` authentication store is inspected and switched.
 
 `gh` stores the active account in a user-level authentication store. `gh-auto-switch switch` and `exec` hold a lock for the current OS user's effective `GH_CONFIG_DIR` store; `exec` keeps that lock while the child process runs. Tools that bypass `gh-auto-switch` can still change `gh` state.
+
+When the installed hook wraps a long-running or interactive `gh` command, other `gh-auto-switch` commands using the same auth store wait for the lock and can time out after 10 seconds.

@@ -147,7 +147,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 6. 一致 rule がない場合の動作を `noop` または `error` で設定できること。
 7. `on_unmatched=noop` の場合、`resolve` / `switch` / `print-env` は正常終了し、account と rule を未解決として出力すること。
 8. `exec` は `on_unmatched` の値にかかわらず、rule 未一致の場合は既定で子プロセスを実行せず rule 未一致エラーとして扱うこと。
-9. `exec --allow-unmatched -- <cmd...>` が明示された場合のみ、rule 未一致でも認証確認および切替を行わず、`GH_HOST` を付与して指定コマンドを実行してよいこと。
+9. `exec --allow-unmatched -- <cmd...>` が明示された場合のみ、rule 未一致でも認証確認および切替を行わず、`GH_HOST` を付与して指定コマンドを実行してよいこと。ただし shell hook 用の `--allow-unmatched-if-noop` が指定され、かつ `on_unmatched=noop` の場合も同様に実行してよいこと。
 10. `owner` glob の照合対象は owner のみとし、host や repo は含めないこと。
 11. glob は Go の `path.Match` 相当の文法を採用し、`*`, `?`, `[]` をサポートすること。`**` は特別扱いしないこと。
 12. glob 照合は case-sensitive とすること。ただし host の一致のみ小文字正規化後に比較すること。
@@ -207,14 +207,14 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 3. 子プロセスの標準入力、標準出力、標準エラーは原則として呼び出し元へ透過すること。
 4. 子プロセスが起動した場合、`ghautoswitch exec` の終了コードは子プロセスの終了コードに従うこと。
 5. 切替前処理でエラーになった場合、子プロセスは実行せず `ghautoswitch` 自身の終了コードを返すこと。
-6. rule 未一致の場合は、`--allow-unmatched` が指定されていない限り子プロセスを実行しないこと。
+6. rule 未一致の場合は、`--allow-unmatched` が指定されていない限り子プロセスを実行しないこと。ただし shell hook 用の `--allow-unmatched-if-noop` が指定され、かつ `on_unmatched=noop` の場合は子プロセスを実行してよいこと。
 7. 子プロセス起動直前に active account を再確認し、期待 account と異なる場合は子プロセスを起動せず認証エラーとして終了すること。
 8. 子プロセス実行中は既定で OS user の実効 `GH_CONFIG_DIR` 認証ストア単位の lock を保持し、子プロセス終了後に解放すること。
 9. `exec --` 以降のコマンドが空の場合は一般エラーとして扱うこと。
 10. 子プロセスは shell を介さず、`cmd[0]` を実行ファイル、`cmd[1:]` を引数配列としてそのまま渡して起動すること。
 11. 子プロセスの起動自体に失敗した場合は一般エラーとして扱い、子プロセスの終了コードとは区別すること。
 12. `--json` 指定時でも、子プロセス起動後は `ghautoswitch` 独自の JSON を標準出力へ出力しないこと。前処理エラー時のみ 7.11 の JSON エラー形式で出力すること。
-13. `--allow-unmatched` 指定時は認証確認および切替を行わず、`GH_HOST` は remote URL から解決した host を付与して子プロセスを実行すること。
+13. `--allow-unmatched` 指定時、および `--allow-unmatched-if-noop` と `on_unmatched=noop` の組み合わせで rule 未一致を許可する場合は、認証確認および切替を行わず、`GH_HOST` は remote URL から解決した host を付与して子プロセスを実行すること。
 
 ### 7.8 `print-env` の動作
 
@@ -251,7 +251,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 1. `install` は bash / zsh / fish の shell 設定ファイルに `gh` 関数 hook を追加または更新できること。
 2. `--shell bash|zsh|fish` により対象 shell を明示できること。未指定の場合は `SHELL` 環境変数から判定すること。
 3. 既定の書き込み先は bash が `~/.bashrc`、zsh が `~/.zshrc`、fish が `~/.config/fish/config.fish` とすること。
-4. hook は `gh-auto-switch exec -- gh ...` を実行し、切替から元の `gh` コマンド終了まで排他 lock を保持すること。
+4. hook は `gh-auto-switch exec --allow-unmatched-if-noop -- gh ...` を実行し、切替から元の `gh` コマンド終了まで排他 lock を保持すること。
 5. `gh-auto-switch exec` の切替前処理が失敗した場合、元の `gh` コマンドは実行しないこと。
 6. hook は管理コメントブロックで囲み、再実行時は既存ブロックを置換して重複追加しないこと。
 7. `install --print` が指定された場合はファイルを書き込まず、hook を標準出力へ出力すること。
@@ -392,7 +392,7 @@ rules:
 | remote URL を解釈できない | 終了コード 1 でエラー終了 |
 | rule 未一致かつ `on_unmatched=error` | 終了コード 4 でエラー終了 |
 | rule 未一致かつ `on_unmatched=noop` | `resolve` / `switch` / `print-env` は正常終了。ただし account / rule は未解決として扱う |
-| `exec` で rule 未一致かつ `--allow-unmatched` なし | 終了コード 4 でエラー終了 |
+| `exec` で rule 未一致かつ `--allow-unmatched` なし | 終了コード 4 でエラー終了。ただし `--allow-unmatched-if-noop` と `on_unmatched=noop` の組み合わせは除く |
 | 設定ファイルが存在しない | 終了コード 2 でエラー終了。ただし `init` は除く |
 | 設定ファイルが不正 | 終了コード 2 でエラー終了 |
 | `init` で設定ファイルが既に存在し、`--force` なし | 終了コード 2 でエラー終了 |
@@ -467,7 +467,7 @@ ghautoswitch check --json
 - `1`: 一般エラー
 - `2`: 設定エラー
 - `3`: 認証エラー
-- `4`: rule 未一致（`on_unmatched=error`、または `exec` で rule 未一致かつ `--allow-unmatched` なしの場合）
+- `4`: rule 未一致（`on_unmatched=error`、または `exec` で rule 未一致かつ許可オプションなしの場合）
 
 ## 12. 受入基準
 
@@ -483,7 +483,7 @@ ghautoswitch check --json
 8. 設定ファイルがユーザーディレクトリ配下のグローバル設定として読み込まれること。
 9. 秘匿情報がログに出力されないこと。
 10. `on_unmatched=noop` の場合、`resolve` / `switch` / `print-env` は rule 未一致でも終了コード 0 で account / rule 未解決として扱われること。
-11. `exec` は rule 未一致時、`--allow-unmatched` がない限り子プロセスを実行せず終了コード 4 で失敗すること。
+11. `exec` は rule 未一致時、`--allow-unmatched` がない限り子プロセスを実行せず終了コード 4 で失敗すること。ただし `--allow-unmatched-if-noop` と `on_unmatched=noop` の組み合わせは子プロセスを実行できること。
 12. `exec` は切替後に shell を介さず子プロセスを実行し、子プロセスの終了コードを返すこと。
 13. `exec` は子プロセス終了まで OS user の実効 `GH_CONFIG_DIR` 認証ストア単位の lock を保持すること。
 14. `remote_url` glob が 7.2.1 の正規化 remote URL に対して照合されること。

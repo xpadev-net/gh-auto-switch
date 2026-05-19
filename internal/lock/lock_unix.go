@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -44,7 +43,7 @@ func acquire(key string, timeout time.Duration) (*Lock, error) {
 	if err := validateDir(dir); err != nil {
 		return nil, err
 	}
-	name := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(key) + ".lock"
+	name := key + ".lock"
 	f, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.InternalError, "could not open lock file", err)
@@ -81,11 +80,15 @@ func baseDir() string {
 func authStoreKey() (string, error) {
 	dir := os.Getenv("GH_CONFIG_DIR")
 	if dir == "" {
-		userConfig, err := os.UserConfigDir()
-		if err != nil {
-			return "", apperr.Wrap(apperr.InternalError, "could not resolve gh config directory", err)
+		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+			dir = filepath.Join(xdg, "gh")
+		} else {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", apperr.Wrap(apperr.InternalError, "could not resolve gh config directory", err)
+			}
+			dir = filepath.Join(home, ".config", "gh")
 		}
-		dir = filepath.Join(userConfig, "gh")
 	}
 	abs, err := filepath.Abs(dir)
 	if err != nil {

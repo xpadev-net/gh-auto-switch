@@ -57,3 +57,20 @@ func TestAcquireAuthStoreAllowsDifferentGHConfigDir(t *testing.T) {
 	}
 	l2.Release()
 }
+
+func TestAcquireAuthStoreUsesXDGConfigHomeDefault(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(tmp, "runtime"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "xdg"))
+	t.Setenv("GH_CONFIG_DIR", "")
+	l, err := AcquireAuthStore(time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Release()
+	t.Setenv("GH_CONFIG_DIR", filepath.Join(tmp, "xdg", "gh"))
+	if l2, err := AcquireAuthStore(time.Millisecond); err == nil {
+		l2.Release()
+		t.Fatalf("AcquireAuthStore() used a different key for XDG default and explicit GH_CONFIG_DIR")
+	}
+}

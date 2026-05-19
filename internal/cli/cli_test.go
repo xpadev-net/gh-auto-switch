@@ -125,6 +125,7 @@ version: 1
 rules:
   - name: github-default
     host: github.com
+    default: true
     account: target
   - name: by-owner
     host: github.com
@@ -193,6 +194,47 @@ exit 1
 	}
 }
 
+func TestExecUsesDefaultRuleOutsideGitRepository(t *testing.T) {
+	tmp := t.TempDir()
+	writeConfig(t, tmp, `
+version: 1
+rules:
+  - name: github-default
+    host: github.com
+    default: true
+    account: target
+  - name: by-owner
+    host: github.com
+    owner: org
+    account: org-user
+`)
+	bin := filepath.Join(tmp, "bin")
+	if err := os.Mkdir(bin, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeExe(t, filepath.Join(bin, "git"), `#!/bin/sh
+if [ "$#" -eq 2 ] && [ "$1 $2" = "rev-parse --is-inside-work-tree" ]; then exit 1; fi
+exit 1
+`)
+	writeExe(t, filepath.Join(bin, "gh"), `#!/bin/sh
+if [ "$#" -eq 6 ] && [ "$1 $2 $3 $4 $5 $6" = "auth status --hostname github.com --json hosts" ]; then
+  printf '{"hosts":{"github.com":[{"state":"success","active":true,"host":"github.com","login":"target","tokenSource":"keyring"}]}}\n'
+  exit 0
+fi
+if [ "$1 $2" = "api user" ]; then
+  if [ "$GH_HOST" != "github.com" ]; then exit 41; fi
+  exit 9
+fi
+exit 1
+`)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var out, errOut bytes.Buffer
+	code := Run([]string{"exec", "--", "gh", "api", "user"}, &out, &errOut)
+	if code != 9 {
+		t.Fatalf("Run() code=%d stderr=%s stdout=%s", code, errOut.String(), out.String())
+	}
+}
+
 func TestPrintEnvJSONHonorsUnmatchedError(t *testing.T) {
 	tmp := t.TempDir()
 	writeConfig(t, tmp, `
@@ -249,7 +291,7 @@ printf '%s\n' "$@"
 `)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	var out, errOut bytes.Buffer
-	code := Run([]string{"exec", "--allow-unmatched", "--", "child", "--json"}, &out, &errOut)
+	code := Run([]string{"exec", "--allow-unmatched-if-noop", "--", "child", "--json"}, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("Run() code=%d stderr=%s stdout=%s", code, errOut.String(), out.String())
 	}
@@ -457,6 +499,41 @@ func TestExecUnmatchedWithoutAllowDoesNotRunChild(t *testing.T) {
 	tmp := t.TempDir()
 	writeConfig(t, tmp, `
 version: 1
+rules:
+  - name: other
+    host: github.com
+    owner: other
+    account: target
+`)
+	bin := filepath.Join(tmp, "bin")
+	if err := os.Mkdir(bin, 0755); err != nil {
+		t.Fatal(err)
+	}
+	childRan := filepath.Join(tmp, "child-ran")
+	writeExe(t, filepath.Join(bin, "git"), `#!/bin/sh
+if [ "$#" -eq 2 ] && [ "$1 $2" = "rev-parse --is-inside-work-tree" ]; then exit 0; fi
+if [ "$#" -eq 4 ] && [ "$1 $2 $3 $4" = "remote get-url -- origin" ]; then echo "git@github.com:org/repo.git"; exit 0; fi
+exit 1
+`)
+	writeExe(t, filepath.Join(bin, "child"), `#!/bin/sh
+touch "`+childRan+`"
+exit 0
+`)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--json", "exec", "--", "child"}, &out, &errOut)
+	if code != 4 {
+		t.Fatalf("Run() code=%d stderr=%s stdout=%s", code, errOut.String(), out.String())
+	}
+	if _, err := os.Stat(childRan); !os.IsNotExist(err) {
+		t.Fatalf("child should not have run, stat err=%v", err)
+	}
+}
+
+func TestExecUnmatchedNoopWithoutAllowDoesNotRunChild(t *testing.T) {
+	tmp := t.TempDir()
+	writeConfig(t, tmp, `
+version: 1
 defaults:
   on_unmatched: noop
 rules:
@@ -527,7 +604,7 @@ func TestInstallPrintsShellSnippets(t *testing.T) {
 			shell: "bash",
 			contains: []string{
 				"# >>> gh-auto-switch hook >>>",
-				"gh-auto-switch exec -- gh \"$@\"",
+				"gh-auto-switch exec --allow-unmatched-if-noop -- gh \"$@\"",
 			},
 		},
 		{
@@ -535,7 +612,7 @@ func TestInstallPrintsShellSnippets(t *testing.T) {
 			shell: "zsh",
 			contains: []string{
 				"# >>> gh-auto-switch hook >>>",
-				"gh-auto-switch exec -- gh \"$@\"",
+				"gh-auto-switch exec --allow-unmatched-if-noop -- gh \"$@\"",
 			},
 		},
 		{
@@ -543,7 +620,7 @@ func TestInstallPrintsShellSnippets(t *testing.T) {
 			shell: "fish",
 			contains: []string{
 				"# >>> gh-auto-switch hook >>>",
-				"gh-auto-switch exec -- gh $argv",
+				"gh-auto-switch exec --allow-unmatched-if-noop -- gh $argv",
 			},
 		},
 	}
@@ -611,7 +688,7 @@ func TestInstallDetectsShellFromEnvAndCreatesFishConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "gh-auto-switch exec -- gh $argv") {
+	if !strings.Contains(string(data), "gh-auto-switch exec --allow-unmatched-if-noop -- gh $argv") {
 		t.Fatalf("fish hook not written:\n%s", string(data))
 	}
 }

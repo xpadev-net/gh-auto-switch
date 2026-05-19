@@ -67,3 +67,14 @@ rules:
 		t.Fatalf("default rule field not loaded: %+v", cfg.Rules[0])
 	}
 }
+
+func TestDefaultRuleRequiresDefaultField(t *testing.T) {
+	cfg := Config{Rules: []Rule{
+		{Name: "host-only", Host: "github.com", Account: "wrong"},
+		{Name: "fallback", Host: "github.com", Default: true, Account: "right"},
+	}}
+	got := DefaultRule(cfg)
+	if got == nil || got.Name != "fallback" {
+		t.Fatalf("DefaultRule() = %+v", got)
+	}
+}
