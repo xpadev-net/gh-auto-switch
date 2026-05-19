@@ -95,7 +95,9 @@ func authStoreKey() (string, error) {
 		return "", apperr.Wrap(apperr.InternalError, "could not resolve gh config directory", err)
 	}
 	// If the config directory does not exist yet, keep the absolute path so all
-	// pre-creation callers contend on the same key.
+	// pre-creation callers contend on the same key. A later creation through a
+	// symlinked parent can canonicalize differently, but failing before gh creates
+	// its config directory would be a worse startup behavior.
 	resolved, err := filepath.EvalSymlinks(abs)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", apperr.Wrap(apperr.InternalError, "could not resolve gh config directory", err)
