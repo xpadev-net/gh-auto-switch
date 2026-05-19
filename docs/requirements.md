@@ -78,7 +78,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 2. 既定 remote 名は `origin` とすること。
 3. オプションにより remote 名を上書きできること。
 4. remote URL を取得できること。[cite:17][cite:19]
-5. Git リポジトリ判定および remote URL 取得を必要とするサブコマンドは `resolve` / `switch` / `exec` / `print-env` とすること。
+5. Git リポジトリ判定および remote URL 取得を必要とするサブコマンドは `resolve` / `switch` / `exec` / `print-env` とすること。ただし `switch` および `exec -- gh ...` は Git リポジトリ外でも unconditional な `default: true` rule を利用できること。
 6. `check` は設定ファイル全体と `gh` 認証状態を検査するサブコマンドであり、Git リポジトリ外でも実行できること。
 7. `init` は設定ファイル生成のみを行うサブコマンドであり、Git リポジトリ外でも実行できること。
 8. `install` は shell hook 設定のみを行うサブコマンドであり、Git リポジトリ外でも実行できること。
@@ -147,7 +147,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 6. 一致 rule がない場合の動作を `noop` または `error` で設定できること。
 7. `on_unmatched=noop` の場合、`resolve` / `switch` / `print-env` は正常終了し、account と rule を未解決として出力すること。
 8. `exec` は `on_unmatched` の値にかかわらず、rule 未一致の場合は既定で子プロセスを実行せず rule 未一致エラーとして扱うこと。
-9. `exec --allow-unmatched -- <cmd...>` が明示された場合のみ、rule 未一致でも認証確認および切替を行わず、`GH_HOST` を付与して指定コマンドを実行してよいこと。
+9. `exec --allow-unmatched -- <cmd...>` が明示された場合のみ、rule 未一致でも認証確認および切替を行わず、`GH_HOST` を付与して指定コマンドを実行してよいこと。ただし shell hook 用の `--allow-unmatched-if-noop` が指定され、かつ `on_unmatched=noop` の場合も同様に実行してよいこと。
 10. `owner` glob の照合対象は owner のみとし、host や repo は含めないこと。
 11. glob は Go の `path.Match` 相当の文法を採用し、`*`, `?`, `[]` をサポートすること。`**` は特別扱いしないこと。
 12. glob 照合は case-sensitive とすること。ただし host の一致のみ小文字正規化後に比較すること。
@@ -155,6 +155,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 14. rule 内に `url_user` / `remote_url` / `owner` を複数指定した場合、同一優先順位の候補としてではなく AND 条件として扱うこと。
 15. rule の優先順位判定では、一致した rule のうち最も高い一致種別をその rule の順位とすること。ただし、指定済みの他条件が不一致の rule は採用してはならないこと。
 16. `default: true` が指定された rule は、同一 host で他の rule が一致しない場合の最下位フォールバックとして採用すること。
+17. unconditional な `default: true` rule とは、`default: true` が指定され、かつ `url_user` / `remote_url` / `owner` を指定しない rule を指すこと。Git リポジトリ外の fallback では、設定ファイルで最初に定義された unconditional な `default: true` rule を採用し、その rule の `host` を対象 host として利用すること。
 
 ### 7.4 `gh` 認証状態確認
 
@@ -179,10 +180,10 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 3. 同一 account がすでに active の場合は何も変更せず成功終了すること。
 4. `gh` 呼び出し時は対象 host を `GH_HOST` 環境変数で明示し、かつ `gh auth switch --hostname <host> --user <account>` により host と account を明示すること。[cite:4]
 5. `ghautoswitch switch` は親 shell の環境変数を変更しないこと。shell へ `GH_HOST` を反映したい場合は `print-env` を使用すること。
-6. `switch` および `exec` は host 単位の排他 lock を取得してから認証確認、必要な切替、切替後確認を行うこと。
+6. `switch` および `exec` は OS user の実効 `GH_CONFIG_DIR` 認証ストア単位の排他 lock を取得してから認証確認、必要な切替、切替後確認を行うこと。
 7. 排他 lock の既定パスは `${XDG_RUNTIME_DIR}/ghautoswitch/<lock-key>.lock` とし、`XDG_RUNTIME_DIR` が未設定の場合は OS の一時ディレクトリ配下のユーザー専用ディレクトリを利用すること。
 8. lock 取得待ちの既定 timeout は 10 秒とし、timeout 時は一般エラーとして終了すること。
-9. `<lock-key>` は 7.2 で正規化した ASCII punycode host をファイル名安全な文字列として利用すること。
+9. `<lock-key>` は実効 `GH_CONFIG_DIR` の正規化パスから生成したファイル名安全な文字列を利用すること。`GH_CONFIG_DIR` が未設定の場合は `gh` の既定設定ディレクトリ相当のパスを利用すること。
 10. lock 親ディレクトリは permission `0700` とし、group writable / world writable、symlink、所有者が現在ユーザー以外の場合は一般エラーとして扱うこと。
 11. lock は OS の advisory file lock または同等の原子的な仕組みで実装し、プロセス異常終了時に stale lock file が残っても次回実行を恒久的に妨げないこと。
 
@@ -207,14 +208,15 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 3. 子プロセスの標準入力、標準出力、標準エラーは原則として呼び出し元へ透過すること。
 4. 子プロセスが起動した場合、`ghautoswitch exec` の終了コードは子プロセスの終了コードに従うこと。
 5. 切替前処理でエラーになった場合、子プロセスは実行せず `ghautoswitch` 自身の終了コードを返すこと。
-6. rule 未一致の場合は、`--allow-unmatched` が指定されていない限り子プロセスを実行しないこと。
+6. rule 未一致の場合は、`--allow-unmatched` が指定されていない限り子プロセスを実行しないこと。ただし shell hook 用の `--allow-unmatched-if-noop` が指定され、かつ `on_unmatched=noop` の場合は子プロセスを実行してよいこと。
 7. 子プロセス起動直前に active account を再確認し、期待 account と異なる場合は子プロセスを起動せず認証エラーとして終了すること。
-8. 子プロセス実行中は既定で host 単位の lock を保持し、子プロセス終了後に解放すること。
+8. 子プロセス実行中は既定で OS user の実効 `GH_CONFIG_DIR` 認証ストア単位の lock を保持し、子プロセス終了後に解放すること。
 9. `exec --` 以降のコマンドが空の場合は一般エラーとして扱うこと。
 10. 子プロセスは shell を介さず、`cmd[0]` を実行ファイル、`cmd[1:]` を引数配列としてそのまま渡して起動すること。
 11. 子プロセスの起動自体に失敗した場合は一般エラーとして扱い、子プロセスの終了コードとは区別すること。
 12. `--json` 指定時でも、子プロセス起動後は `ghautoswitch` 独自の JSON を標準出力へ出力しないこと。前処理エラー時のみ 7.11 の JSON エラー形式で出力すること。
-13. `--allow-unmatched` 指定時は認証確認および切替を行わず、`GH_HOST` は remote URL から解決した host を付与して子プロセスを実行すること。
+13. `--allow-unmatched` 指定時、および `--allow-unmatched-if-noop` と `on_unmatched=noop` の組み合わせで rule 未一致を許可する場合は、認証確認および切替を行わず、`GH_HOST` は remote URL から解決した host を付与して子プロセスを実行すること。
+14. Git リポジトリ外で `exec -- gh ...` を実行した場合、`--allow-unmatched` の有無にかかわらず、設定ファイルで最初に定義された unconditional な `default: true` rule があれば、その rule の `host` と `account` を使って切替後に子プロセスを実行すること。該当 rule がない場合は `not_git_repository` として失敗すること。
 
 ### 7.8 `print-env` の動作
 
@@ -251,8 +253,8 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 1. `install` は bash / zsh / fish の shell 設定ファイルに `gh` 関数 hook を追加または更新できること。
 2. `--shell bash|zsh|fish` により対象 shell を明示できること。未指定の場合は `SHELL` 環境変数から判定すること。
 3. 既定の書き込み先は bash が `~/.bashrc`、zsh が `~/.zshrc`、fish が `~/.config/fish/config.fish` とすること。
-4. hook は `gh-auto-switch switch` を実行し、成功した場合のみ `command gh` で元の `gh` コマンドを実行すること。
-5. `gh-auto-switch switch` が失敗した場合、元の `gh` コマンドは実行しないこと。
+4. hook は `gh-auto-switch exec --allow-unmatched-if-noop -- gh ...` を実行し、切替から元の `gh` コマンド終了まで排他 lock を保持すること。
+5. `gh-auto-switch exec` の切替前処理が失敗した場合、元の `gh` コマンドは実行しないこと。
 6. hook は管理コメントブロックで囲み、再実行時は既存ブロックを置換して重複追加しないこと。
 7. `install --print` が指定された場合はファイルを書き込まず、hook を標準出力へ出力すること。
 
@@ -368,7 +370,7 @@ rules:
 - userinfo の password component は credential として扱い、`--verbose` および `--json` を含む全出力でマスクすること。userinfo の username component は `url_user` として扱ってよい。
 - userinfo の username component が 40 文字以上、または `ghp_`, `github_pat_`, `gho_`, `ghu_`, `ghs_`, `ghr_` で始まる場合は token らしい値として扱い、出力上は `***` にマスクすること。
 - `print-env` の出力は shell injection の影響を受けないよう、host validation と shell quote を必須とすること。
-- `exec` は子プロセス終了まで host 単位の lock を保持すること。ただし `gh` の active account は host-global な状態であるため、本ツールを介さない外部プロセスにより変更され得る制約を README に明記すること。
+- `exec` は子プロセス終了まで OS user の実効 `GH_CONFIG_DIR` 認証ストア単位の lock を保持すること。ただし `gh` の active account は本ツールを介さない外部プロセスにより変更され得る制約を README に明記すること。
 - `exec` は shell を介して子プロセスを起動してはならないこと。
 - `gh` subprocess へ渡す環境変数は原則として親プロセスから継承してよいが、`GH_HOST` は対象 host で上書きし、token 系環境変数は検出時点で fail closed すること。
 
@@ -387,12 +389,12 @@ rules:
 
 | 条件 | 動作 |
 |---|---|
-| Git リポジトリではない | 終了コード 1 でエラー終了 |
+| Git リポジトリではない | 終了コード 1 でエラー終了。ただし設定ファイルで最初に定義された unconditional な `default: true` rule がある場合、`switch` はその account へ切替して成功し、`exec -- gh ...` はその account へ切替後に子プロセスを実行する |
 | 指定 remote が存在しない | 終了コード 1 でエラー終了 |
 | remote URL を解釈できない | 終了コード 1 でエラー終了 |
 | rule 未一致かつ `on_unmatched=error` | 終了コード 4 でエラー終了 |
 | rule 未一致かつ `on_unmatched=noop` | `resolve` / `switch` / `print-env` は正常終了。ただし account / rule は未解決として扱う |
-| `exec` で rule 未一致かつ `--allow-unmatched` なし | 終了コード 4 でエラー終了 |
+| `exec` で rule 未一致かつ `--allow-unmatched` なし | 終了コード 4 でエラー終了。ただし `--allow-unmatched-if-noop` と `on_unmatched=noop` の組み合わせは除く |
 | 設定ファイルが存在しない | 終了コード 2 でエラー終了。ただし `init` は除く |
 | 設定ファイルが不正 | 終了コード 2 でエラー終了 |
 | `init` で設定ファイルが既に存在し、`--force` なし | 終了コード 2 でエラー終了 |
@@ -467,7 +469,7 @@ ghautoswitch check --json
 - `1`: 一般エラー
 - `2`: 設定エラー
 - `3`: 認証エラー
-- `4`: rule 未一致（`on_unmatched=error`、または `exec` で rule 未一致かつ `--allow-unmatched` なしの場合）
+- `4`: rule 未一致（`on_unmatched=error`、または `exec` で rule 未一致かつ許可オプションなしの場合）
 
 ## 12. 受入基準
 
@@ -483,9 +485,9 @@ ghautoswitch check --json
 8. 設定ファイルがユーザーディレクトリ配下のグローバル設定として読み込まれること。
 9. 秘匿情報がログに出力されないこと。
 10. `on_unmatched=noop` の場合、`resolve` / `switch` / `print-env` は rule 未一致でも終了コード 0 で account / rule 未解決として扱われること。
-11. `exec` は rule 未一致時、`--allow-unmatched` がない限り子プロセスを実行せず終了コード 4 で失敗すること。
+11. `exec` は rule 未一致時、`--allow-unmatched` がない限り子プロセスを実行せず終了コード 4 で失敗すること。ただし `--allow-unmatched-if-noop` と `on_unmatched=noop` の組み合わせ、および Git リポジトリ外の `exec -- gh ...` で unconditional な `default: true` rule を使う場合は子プロセスを実行できること。
 12. `exec` は切替後に shell を介さず子プロセスを実行し、子プロセスの終了コードを返すこと。
-13. `exec` は子プロセス終了まで host 単位の lock を保持すること。
+13. `exec` は子プロセス終了まで OS user の実効 `GH_CONFIG_DIR` 認証ストア単位の lock を保持すること。
 14. `remote_url` glob が 7.2.1 の正規化 remote URL に対して照合されること。
 15. `print-env` が `export GH_HOST='github.com'` 形式で shell-safe な出力を行うこと。
 16. `GH_TOKEN` 等の token 環境変数が存在する場合、`switch` / `exec` / `check` が終了コード 3 で失敗すること。

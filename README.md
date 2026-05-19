@@ -49,6 +49,10 @@ rules:
 
 Set `default: true` on a rule to use it as the lowest-priority fallback for that host. More specific rules using `url_user`, `remote_url`, or `owner` still take precedence.
 
+Outside a Git repository, `switch` and the installed `gh` hook use only an unconditional rule marked `default: true` as the account fallback. A bare host-only rule is not used for this outside-repository fallback.
+
+Upgrade note: this is a breaking behavior change. If your config relied on a host-only rule (no `url_user` / `remote_url` / `owner`) as an outside-repository fallback, add `default: true` explicitly or outside-repository `switch` and hooked `gh` calls will fail with `not_git_repository`.
+
 Config files must not be symlinks or group/world writable. Files created by `gh-auto-switch init` use `0600`; the default config directory uses `0700`.
 
 ## Commands
@@ -67,10 +71,14 @@ gh-auto-switch install --shell fish --print
 
 `print-env` only prints `GH_HOST`; it does not switch accounts. `switch` changes `gh` state for the target host but cannot change the parent shell environment.
 
-`install` adds a managed `gh` shell function to bash, zsh, or fish so normal `gh ...` commands run `gh-auto-switch switch` first. It updates `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish` by default; use `--print` to print the hook without writing files.
+`install` adds a managed `gh` shell function to bash, zsh, or fish so normal `gh ...` commands run through `gh-auto-switch exec`. It updates `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish` by default; use `--print` to print the hook without writing files.
+
+Outside a Git repository, the installed hook and direct `gh-auto-switch exec -- gh ...` run `gh` through the first unconditional `default: true` rule when one is configured. This fallback is intentionally limited to `exec -- gh ...` and does not apply to other commands such as `exec -- /usr/bin/gh ...`. `--allow-unmatched` only applies after a repository remote has been resolved; outside a Git repository there is no remote host to pass through unswitched.
 
 ## Authentication Notes
 
 `switch`, `exec`, and `check` fail closed when `GH_TOKEN`, `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`, or `GITHUB_ENTERPRISE_TOKEN` is set. `GH_CONFIG_DIR` is inherited by subprocesses, so it affects which `gh` authentication store is inspected and switched.
 
-`gh` stores the active account per host globally. `gh-auto-switch exec` holds a host lock while the child process runs, but other tools that bypass `gh-auto-switch` can still change `gh` state.
+`gh` stores the active account in a user-level authentication store. `gh-auto-switch switch` and `exec` hold a lock for the current OS user's effective `GH_CONFIG_DIR` store; `exec` keeps that lock while the child process runs. Tools that bypass `gh-auto-switch` can still change `gh` state.
+
+When the installed hook wraps a long-running or interactive `gh` command, other `gh-auto-switch` commands using the same auth store wait for the lock. If the lock is still held after 10 seconds, those commands fail with a lock timeout.

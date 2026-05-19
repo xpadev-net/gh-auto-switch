@@ -42,7 +42,7 @@ type Rule struct {
 func DefaultRule(cfg Config) *Rule {
 	for i := range cfg.Rules {
 		r := &cfg.Rules[i]
-		if r.URLUser == "" && r.RemoteURL == "" && r.Owner == "" {
+		if r.Default && r.URLUser == "" && r.RemoteURL == "" && r.Owner == "" {
 			return r
 		}
 	}

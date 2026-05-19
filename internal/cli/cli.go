@@ -163,7 +163,7 @@ func cmdSwitch(args []string, g globals, stdout, stderr io.Writer) (int, error) 
 		}
 		return 4, apperr.New(apperr.UnmatchedRule, "no matching rule")
 	}
-	l, err := lock.Acquire(r.remote.Host, 10*time.Second)
+	l, err := lock.AcquireAuthStore(10 * time.Second)
 	if err != nil {
 		return 1, err
 	}
@@ -184,9 +184,9 @@ func switchDefaultAccount(g globals, stdout io.Writer) (int, error) {
 	}
 	rule := config.DefaultRule(cfg)
 	if rule == nil {
-		return 1, apperr.New(apperr.NotGitRepository, "not a git repository")
+		return 1, apperr.New(apperr.NotGitRepository, "outside a git repository and no unconditional default: true rule configured")
 	}
-	l, err := lock.Acquire(rule.Host, 10*time.Second)
+	l, err := lock.AcquireAuthStore(10 * time.Second)
 	if err != nil {
 		return 1, err
 	}
@@ -215,6 +215,7 @@ func cmdExec(args []string, g globals, stdout, stderr io.Writer) (int, error) {
 	fs := flagSet("exec")
 	remoteFlag := fs.String("remote", "", "")
 	allowUnmatched := fs.Bool("allow-unmatched", false, "")
+	allowUnmatchedIfNoop := fs.Bool("allow-unmatched-if-noop", false, "")
 	if err := fs.Parse(pre); err != nil || fs.NArg() != 0 {
 		return 1, apperr.New(apperr.InvalidArguments, "invalid exec arguments")
 	}
@@ -229,30 +230,64 @@ func cmdExec(args []string, g globals, stdout, stderr io.Writer) (int, error) {
 	}
 	r, err := resolve(*remoteFlag, g, stderr)
 	if err != nil {
+		// `exec -- gh ...` is the installed hook path. Preserve its outside-repo
+		// default-account behavior without broadening arbitrary `exec -- <cmd>`.
+		if apperr.From(err).Code == apperr.NotGitRepository && cmdArgs[0] == "gh" {
+			return execDefaultAccount(cmdArgs, stdout, stderr)
+		}
 		return 1, err
 	}
 	if !r.match.Matched {
-		if !*allowUnmatched {
+		allowByConfig := *allowUnmatchedIfNoop && r.cfg.Defaults.OnUnmatched == "noop"
+		if !*allowUnmatched && !allowByConfig {
 			return 4, apperr.New(apperr.UnmatchedRule, "no matching rule")
 		}
+		l, err := lock.AcquireAuthStore(10 * time.Second)
+		if err != nil {
+			return 1, err
+		}
+		defer l.Release()
 		return runChild(cmdArgs, r.remote.Host, stdout, stderr)
 	}
-	l, err := lock.Acquire(r.remote.Host, 10*time.Second)
+	l, err := lock.AcquireAuthStore(10 * time.Second)
 	if err != nil {
 		return 1, err
 	}
 	defer l.Release()
-	if _, err := ensureSwitched(r.remote.Host, r.match.Rule.Account); err != nil {
+	return runChildWithAccount(cmdArgs, r.remote.Host, r.match.Rule.Account, stdout, stderr)
+}
+
+func execDefaultAccount(cmdArgs []string, stdout, stderr io.Writer) (int, error) {
+	// Outside-repo fallback still needs config data to find the unconditional
+	// default rule, so load it directly on this path.
+	cfg, _, err := config.Load()
+	if err != nil {
+		return 2, err
+	}
+	rule := config.DefaultRule(cfg)
+	if rule == nil {
+		return 1, apperr.New(apperr.NotGitRepository, "outside a git repository and no unconditional default: true rule configured")
+	}
+	l, err := lock.AcquireAuthStore(10 * time.Second)
+	if err != nil {
+		return 1, err
+	}
+	defer l.Release()
+	return runChildWithAccount(cmdArgs, rule.Host, rule.Account, stdout, stderr)
+}
+
+func runChildWithAccount(cmdArgs []string, host, account string, stdout, stderr io.Writer) (int, error) {
+	if _, err := ensureSwitched(host, account); err != nil {
 		return 3, err
 	}
-	st, err := ghadapter.StatusFor(r.remote.Host)
+	st, err := ghadapter.StatusFor(host)
 	if err != nil {
 		return 3, err
 	}
-	if st.Active != r.match.Rule.Account {
+	if st.Active != account {
 		return 3, apperr.New(apperr.HostUnauthenticated, "active account changed before exec")
 	}
-	return runChild(cmdArgs, r.remote.Host, stdout, stderr)
+	return runChild(cmdArgs, host, stdout, stderr)
 }
 
 func cmdPrintEnv(args []string, g globals, stdout, stderr io.Writer) (int, error) {
