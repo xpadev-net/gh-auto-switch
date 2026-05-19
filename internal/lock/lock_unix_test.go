@@ -74,3 +74,27 @@ func TestAcquireAuthStoreUsesXDGConfigHomeDefault(t *testing.T) {
 		t.Fatalf("AcquireAuthStore() used a different key for XDG default and explicit GH_CONFIG_DIR")
 	}
 }
+
+func TestAcquireAuthStoreResolvesGHConfigDirSymlink(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(tmp, "runtime"))
+	realDir := filepath.Join(tmp, "real-gh")
+	linkDir := filepath.Join(tmp, "link-gh")
+	if err := os.Mkdir(realDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GH_CONFIG_DIR", realDir)
+	l, err := AcquireAuthStore(time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Release()
+	t.Setenv("GH_CONFIG_DIR", linkDir)
+	if l2, err := AcquireAuthStore(time.Millisecond); err == nil {
+		l2.Release()
+		t.Fatalf("AcquireAuthStore() used a different key for a symlinked GH_CONFIG_DIR")
+	}
+}

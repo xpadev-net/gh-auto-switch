@@ -94,7 +94,14 @@ func authStoreKey() (string, error) {
 	if err != nil {
 		return "", apperr.Wrap(apperr.InternalError, "could not resolve gh config directory", err)
 	}
-	sum := sha256.Sum256([]byte(filepath.Clean(abs)))
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", apperr.Wrap(apperr.InternalError, "could not resolve gh config directory", err)
+	}
+	if err == nil {
+		abs = resolved
+	}
+	sum := sha256.Sum256([]byte(abs))
 	return "authstore-" + hex.EncodeToString(sum[:]), nil
 }
 
