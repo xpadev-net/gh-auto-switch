@@ -150,6 +150,9 @@ func cmdSwitch(args []string, g globals, stdout, stderr io.Writer) (int, error) 
 	}
 	r, err := resolve(*remoteFlag, g, stderr)
 	if err != nil {
+		if apperr.From(err).Code == apperr.NotGitRepository {
+			return switchDefaultAccount(g, stdout)
+		}
 		return 1, err
 	}
 	if !r.match.Matched {
@@ -170,6 +173,35 @@ func cmdSwitch(args []string, g globals, stdout, stderr io.Writer) (int, error) 
 		return 3, err
 	}
 	res := resultFor(r, action)
+	writeResult(stdout, g, res)
+	return 0, nil
+}
+
+func switchDefaultAccount(g globals, stdout io.Writer) (int, error) {
+	cfg, _, err := config.Load()
+	if err != nil {
+		return 2, err
+	}
+	rule := config.DefaultRule(cfg)
+	if rule == nil {
+		return 1, apperr.New(apperr.NotGitRepository, "not a git repository")
+	}
+	l, err := lock.Acquire(rule.Host, 10*time.Second)
+	if err != nil {
+		return 1, err
+	}
+	defer l.Release()
+	action, err := ensureSwitched(rule.Host, rule.Account)
+	if err != nil {
+		return 3, err
+	}
+	res := output.Result{
+		Host:    output.Ptr(rule.Host),
+		Account: output.Ptr(rule.Account),
+		Rule:    output.Ptr(rule.Name),
+		Matched: true,
+		Action:  action,
+	}
 	writeResult(stdout, g, res)
 	return 0, nil
 }
