@@ -71,6 +71,8 @@ gh-auto-switch install --shell fish --print
 
 `install` adds a managed `gh` shell function to bash, zsh, or fish so normal `gh ...` commands run through `gh-auto-switch exec`. It updates `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish` by default; use `--print` to print the hook without writing files.
 
+Outside a Git repository, the installed hook and direct `gh-auto-switch exec -- gh ...` run `gh` through the first unconditional `default: true` rule when one is configured. `--allow-unmatched` only applies after a repository remote has been resolved; outside a Git repository there is no remote host to pass through unswitched.
+
 ## Authentication Notes
 
 `switch`, `exec`, and `check` fail closed when `GH_TOKEN`, `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`, or `GITHUB_ENTERPRISE_TOKEN` is set. `GH_CONFIG_DIR` is inherited by subprocesses, so it affects which `gh` authentication store is inspected and switched.

@@ -78,7 +78,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 2. 既定 remote 名は `origin` とすること。
 3. オプションにより remote 名を上書きできること。
 4. remote URL を取得できること。[cite:17][cite:19]
-5. Git リポジトリ判定および remote URL 取得を必要とするサブコマンドは `resolve` / `switch` / `exec` / `print-env` とすること。
+5. Git リポジトリ判定および remote URL 取得を必要とするサブコマンドは `resolve` / `switch` / `exec` / `print-env` とすること。ただし `switch` および `exec -- gh ...` は Git リポジトリ外でも unconditional な `default: true` rule を利用できること。
 6. `check` は設定ファイル全体と `gh` 認証状態を検査するサブコマンドであり、Git リポジトリ外でも実行できること。
 7. `init` は設定ファイル生成のみを行うサブコマンドであり、Git リポジトリ外でも実行できること。
 8. `install` は shell hook 設定のみを行うサブコマンドであり、Git リポジトリ外でも実行できること。
@@ -155,6 +155,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 14. rule 内に `url_user` / `remote_url` / `owner` を複数指定した場合、同一優先順位の候補としてではなく AND 条件として扱うこと。
 15. rule の優先順位判定では、一致した rule のうち最も高い一致種別をその rule の順位とすること。ただし、指定済みの他条件が不一致の rule は採用してはならないこと。
 16. `default: true` が指定された rule は、同一 host で他の rule が一致しない場合の最下位フォールバックとして採用すること。
+17. unconditional な `default: true` rule とは、`default: true` が指定され、かつ `url_user` / `remote_url` / `owner` を指定しない rule を指すこと。Git リポジトリ外の fallback では、設定ファイルで最初に定義された unconditional な `default: true` rule を採用し、その rule の `host` を対象 host として利用すること。
 
 ### 7.4 `gh` 認証状態確認
 
@@ -215,6 +216,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 11. 子プロセスの起動自体に失敗した場合は一般エラーとして扱い、子プロセスの終了コードとは区別すること。
 12. `--json` 指定時でも、子プロセス起動後は `ghautoswitch` 独自の JSON を標準出力へ出力しないこと。前処理エラー時のみ 7.11 の JSON エラー形式で出力すること。
 13. `--allow-unmatched` 指定時、および `--allow-unmatched-if-noop` と `on_unmatched=noop` の組み合わせで rule 未一致を許可する場合は、認証確認および切替を行わず、`GH_HOST` は remote URL から解決した host を付与して子プロセスを実行すること。
+14. Git リポジトリ外で `exec -- gh ...` を実行した場合、`--allow-unmatched` の有無にかかわらず、設定ファイルで最初に定義された unconditional な `default: true` rule があれば、その rule の `host` と `account` を使って切替後に子プロセスを実行すること。該当 rule がない場合は `not_git_repository` として失敗すること。
 
 ### 7.8 `print-env` の動作
 
@@ -387,7 +389,7 @@ rules:
 
 | 条件 | 動作 |
 |---|---|
-| Git リポジトリではない | 終了コード 1 でエラー終了 |
+| Git リポジトリではない | 終了コード 1 でエラー終了。ただし設定ファイルで最初に定義された unconditional な `default: true` rule がある場合、`switch` はその account へ切替して成功し、`exec -- gh ...` はその account へ切替後に子プロセスを実行する |
 | 指定 remote が存在しない | 終了コード 1 でエラー終了 |
 | remote URL を解釈できない | 終了コード 1 でエラー終了 |
 | rule 未一致かつ `on_unmatched=error` | 終了コード 4 でエラー終了 |
@@ -483,7 +485,7 @@ ghautoswitch check --json
 8. 設定ファイルがユーザーディレクトリ配下のグローバル設定として読み込まれること。
 9. 秘匿情報がログに出力されないこと。
 10. `on_unmatched=noop` の場合、`resolve` / `switch` / `print-env` は rule 未一致でも終了コード 0 で account / rule 未解決として扱われること。
-11. `exec` は rule 未一致時、`--allow-unmatched` がない限り子プロセスを実行せず終了コード 4 で失敗すること。ただし `--allow-unmatched-if-noop` と `on_unmatched=noop` の組み合わせは子プロセスを実行できること。
+11. `exec` は rule 未一致時、`--allow-unmatched` がない限り子プロセスを実行せず終了コード 4 で失敗すること。ただし `--allow-unmatched-if-noop` と `on_unmatched=noop` の組み合わせ、および Git リポジトリ外の `exec -- gh ...` で unconditional な `default: true` rule を使う場合は子プロセスを実行できること。
 12. `exec` は切替後に shell を介さず子プロセスを実行し、子プロセスの終了コードを返すこと。
 13. `exec` は子プロセス終了まで OS user の実効 `GH_CONFIG_DIR` 認証ストア単位の lock を保持すること。
 14. `remote_url` glob が 7.2.1 の正規化 remote URL に対して照合されること。
