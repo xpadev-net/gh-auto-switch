@@ -5,6 +5,7 @@ package lock
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -38,6 +39,8 @@ func TestAcquireAuthStoreSerializesSameGHConfigDir(t *testing.T) {
 	if l2, err := AcquireAuthStore(time.Millisecond); err == nil {
 		l2.Release()
 		t.Fatalf("AcquireAuthStore() succeeded while same auth store was locked")
+	} else if !strings.Contains(err.Error(), "another gh-auto-switch command may still be running") {
+		t.Fatalf("AcquireAuthStore() error = %v", err)
 	}
 }
 

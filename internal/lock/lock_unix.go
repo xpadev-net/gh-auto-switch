@@ -56,7 +56,7 @@ func acquire(key string, timeout time.Duration) (*Lock, error) {
 		}
 		if time.Now().After(deadline) {
 			_ = f.Close()
-			return nil, apperr.New(apperr.LockTimeout, "timed out acquiring auth store lock")
+			return nil, apperr.New(apperr.LockTimeout, "timed out acquiring auth store lock; another gh-auto-switch command may still be running")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
