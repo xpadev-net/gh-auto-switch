@@ -118,6 +118,81 @@ rules:
 	}
 }
 
+func TestSwitchUsesDefaultRuleOutsideGitRepository(t *testing.T) {
+	tmp := t.TempDir()
+	writeConfig(t, tmp, `
+version: 1
+rules:
+  - name: github-default
+    host: github.com
+    account: target
+  - name: by-owner
+    host: github.com
+    owner: org
+    account: org-user
+`)
+	bin := filepath.Join(tmp, "bin")
+	if err := os.Mkdir(bin, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeExe(t, filepath.Join(bin, "git"), `#!/bin/sh
+if [ "$#" -eq 2 ] && [ "$1 $2" = "rev-parse --is-inside-work-tree" ]; then exit 1; fi
+exit 1
+`)
+	writeExe(t, filepath.Join(bin, "gh"), `#!/bin/sh
+if [ "$#" -eq 6 ] && [ "$1 $2 $3 $4 $5 $6" = "auth status --hostname github.com --json hosts" ]; then
+  printf '{"hosts":{"github.com":[{"state":"success","active":true,"host":"github.com","login":"target","tokenSource":"keyring"}]}}\n'
+  exit 0
+fi
+exit 1
+`)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--json", "switch"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("Run() code=%d stderr=%s stdout=%s", code, errOut.String(), out.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["host"] != "github.com" || got["account"] != "target" || got["rule"] != "github-default" {
+		t.Fatalf("unexpected JSON result: %#v", got)
+	}
+	if got["owner"] != nil || got["repo"] != nil || got["matched"] != true || got["action"] != "none" {
+		t.Fatalf("unexpected JSON result: %#v", got)
+	}
+}
+
+func TestSwitchOutsideGitRepositoryFailsWithoutDefaultRule(t *testing.T) {
+	tmp := t.TempDir()
+	writeConfig(t, tmp, `
+version: 1
+rules:
+  - name: by-owner
+    host: github.com
+    owner: org
+    account: target
+`)
+	bin := filepath.Join(tmp, "bin")
+	if err := os.Mkdir(bin, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeExe(t, filepath.Join(bin, "git"), `#!/bin/sh
+if [ "$#" -eq 2 ] && [ "$1 $2" = "rev-parse --is-inside-work-tree" ]; then exit 1; fi
+exit 1
+`)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var out, errOut bytes.Buffer
+	code := Run([]string{"--json", "switch"}, &out, &errOut)
+	if code != 1 {
+		t.Fatalf("Run() code=%d stderr=%s stdout=%s", code, errOut.String(), out.String())
+	}
+	if !strings.Contains(out.String(), `"code":"not_git_repository"`) {
+		t.Fatalf("stdout = %s", out.String())
+	}
+}
+
 func TestPrintEnvJSONHonorsUnmatchedError(t *testing.T) {
 	tmp := t.TempDir()
 	writeConfig(t, tmp, `

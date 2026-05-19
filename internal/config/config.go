@@ -38,6 +38,16 @@ type Rule struct {
 	Account   string `yaml:"account"`
 }
 
+func DefaultRule(cfg Config) *Rule {
+	for i := range cfg.Rules {
+		r := &cfg.Rules[i]
+		if r.URLUser == "" && r.RemoteURL == "" && r.Owner == "" {
+			return r
+		}
+	}
+	return nil
+}
+
 func DefaultPath() (string, error) {
 	if p := os.Getenv("GHAUTOSWITCH_CONFIG"); p != "" {
 		return filepath.Abs(p)
