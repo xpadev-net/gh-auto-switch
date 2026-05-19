@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestValidateRejectsUnknownOnUnmatched(t *testing.T) {
 	cfg := Config{
@@ -37,5 +41,29 @@ func TestValidateRejectsOptionLikeRemoteName(t *testing.T) {
 	}
 	if err := Validate(&cfg); err == nil {
 		t.Fatalf("Validate() succeeded")
+	}
+}
+
+func TestLoadAcceptsDefaultRuleField(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "config.yml")
+	if err := os.WriteFile(path, []byte(`
+version: 1
+rules:
+  - name: fallback
+    host: github.com
+    default: true
+    account: u
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GHAUTOSWITCH_CONFIG", path)
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.Rules[0].Default {
+		t.Fatalf("default rule field not loaded: %+v", cfg.Rules[0])
 	}
 }

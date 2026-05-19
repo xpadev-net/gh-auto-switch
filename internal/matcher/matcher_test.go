@@ -48,3 +48,68 @@ func TestResolveTreatsMultipleConditionsAsAnd(t *testing.T) {
 		t.Fatalf("Resolve() = %+v", got)
 	}
 }
+
+func TestResolveDefaultRuleIsLowestHostFallback(t *testing.T) {
+	cfg := config.Config{Rules: []config.Rule{
+		{Name: "default", Host: "github.com", Default: true, Account: "default-user"},
+		{Name: "host", Host: "github.com", Account: "host-user"},
+		{Name: "owner", Host: "github.com", Owner: "org", Account: "owner-user"},
+	}}
+
+	got := Resolve(cfg, parser.Remote{Host: "github.com", Owner: "other"})
+	if !got.Matched || got.Rule.Name != "host" {
+		t.Fatalf("Resolve() host fallback = %+v", got)
+	}
+
+	got = Resolve(cfg, parser.Remote{Host: "gitlab.com", Owner: "org"})
+	if got.Matched {
+		t.Fatalf("Resolve() matched different host: %+v", got)
+	}
+}
+
+func TestResolveDefaultRuleMatchesWhenNoOtherHostRuleMatches(t *testing.T) {
+	cfg := config.Config{Rules: []config.Rule{
+		{Name: "owner", Host: "github.com", Owner: "org", Account: "owner-user"},
+		{Name: "default", Host: "github.com", Default: true, Account: "default-user"},
+	}}
+	got := Resolve(cfg, parser.Remote{Host: "github.com", Owner: "other"})
+	if !got.Matched || got.Rule.Name != "default" {
+		t.Fatalf("Resolve() = %+v", got)
+	}
+}
+
+func TestResolveDefaultRuleKeepsFallbackRankWithConditions(t *testing.T) {
+	tests := []struct {
+		name   string
+		rule   config.Rule
+		remote parser.Remote
+	}{
+		{
+			name:   "url_user",
+			rule:   config.Rule{Name: "default-url-user", Host: "github.com", Default: true, URLUser: "hint", Account: "default-user"},
+			remote: parser.Remote{Host: "github.com", URLUser: "hint"},
+		},
+		{
+			name:   "remote_url",
+			rule:   config.Rule{Name: "default-remote-url", Host: "github.com", Default: true, RemoteURL: "https://github.com/org/*", Account: "default-user"},
+			remote: parser.Remote{Host: "github.com", NormalizedURL: "https://github.com/org/repo.git"},
+		},
+		{
+			name:   "owner",
+			rule:   config.Rule{Name: "default-owner", Host: "github.com", Default: true, Owner: "org", Account: "default-user"},
+			remote: parser.Remote{Host: "github.com", Owner: "org"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.Config{Rules: []config.Rule{
+				tc.rule,
+				{Name: "host", Host: "github.com", Account: "host-user"},
+			}}
+			got := Resolve(cfg, tc.remote)
+			if !got.Matched || got.Rule.Name != "host" {
+				t.Fatalf("Resolve() = %+v", got)
+			}
+		})
+	}
+}

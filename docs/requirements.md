@@ -141,6 +141,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
    2. `host + remote_url` 一致
    3. `host + owner` 一致
    4. `host` のみ一致
+   5. `host + default: true` 一致
 4. 複数 rule が同じ優先順位で一致した場合、設定ファイルで先に定義された rule を採用すること。
 5. `remote_url` glob の照合対象は、秘匿情報を含む元 URL ではなく、7.2.1 で定義した正規化 remote URL とすること。
 6. 一致 rule がない場合の動作を `noop` または `error` で設定できること。
@@ -153,6 +154,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 13. rule の `host` は完全一致のみとし、glob は許可しないこと。
 14. rule 内に `url_user` / `remote_url` / `owner` を複数指定した場合、同一優先順位の候補としてではなく AND 条件として扱うこと。
 15. rule の優先順位判定では、一致した rule のうち最も高い一致種別をその rule の順位とすること。ただし、指定済みの他条件が不一致の rule は採用してはならないこと。
+16. `default: true` が指定された rule は、同一 host で他の rule が一致しない場合の最下位フォールバックとして採用すること。
 
 ### 7.4 `gh` 認証状態確認
 
@@ -317,6 +319,11 @@ rules:
   - name: ghe-work
     host: github.example.com
     account: enterprise-user
+
+  - name: github-default
+    host: github.com
+    default: true
+    account: hogehoge
 ```
 
 ### 8.3 設定バリデーション
