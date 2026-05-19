@@ -179,10 +179,10 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 3. 同一 account がすでに active の場合は何も変更せず成功終了すること。
 4. `gh` 呼び出し時は対象 host を `GH_HOST` 環境変数で明示し、かつ `gh auth switch --hostname <host> --user <account>` により host と account を明示すること。[cite:4]
 5. `ghautoswitch switch` は親 shell の環境変数を変更しないこと。shell へ `GH_HOST` を反映したい場合は `print-env` を使用すること。
-6. `switch` および `exec` は host 単位の排他 lock を取得してから認証確認、必要な切替、切替後確認を行うこと。
+6. `switch` および `exec` は OS user の実効 `GH_CONFIG_DIR` 認証ストア単位の排他 lock を取得してから認証確認、必要な切替、切替後確認を行うこと。
 7. 排他 lock の既定パスは `${XDG_RUNTIME_DIR}/ghautoswitch/<lock-key>.lock` とし、`XDG_RUNTIME_DIR` が未設定の場合は OS の一時ディレクトリ配下のユーザー専用ディレクトリを利用すること。
 8. lock 取得待ちの既定 timeout は 10 秒とし、timeout 時は一般エラーとして終了すること。
-9. `<lock-key>` は 7.2 で正規化した ASCII punycode host をファイル名安全な文字列として利用すること。
+9. `<lock-key>` は実効 `GH_CONFIG_DIR` の正規化パスから生成したファイル名安全な文字列を利用すること。`GH_CONFIG_DIR` が未設定の場合は `gh` の既定設定ディレクトリ相当のパスを利用すること。
 10. lock 親ディレクトリは permission `0700` とし、group writable / world writable、symlink、所有者が現在ユーザー以外の場合は一般エラーとして扱うこと。
 11. lock は OS の advisory file lock または同等の原子的な仕組みで実装し、プロセス異常終了時に stale lock file が残っても次回実行を恒久的に妨げないこと。
 
@@ -209,7 +209,7 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 5. 切替前処理でエラーになった場合、子プロセスは実行せず `ghautoswitch` 自身の終了コードを返すこと。
 6. rule 未一致の場合は、`--allow-unmatched` が指定されていない限り子プロセスを実行しないこと。
 7. 子プロセス起動直前に active account を再確認し、期待 account と異なる場合は子プロセスを起動せず認証エラーとして終了すること。
-8. 子プロセス実行中は既定で host 単位の lock を保持し、子プロセス終了後に解放すること。
+8. 子プロセス実行中は既定で OS user の実効 `GH_CONFIG_DIR` 認証ストア単位の lock を保持し、子プロセス終了後に解放すること。
 9. `exec --` 以降のコマンドが空の場合は一般エラーとして扱うこと。
 10. 子プロセスは shell を介さず、`cmd[0]` を実行ファイル、`cmd[1:]` を引数配列としてそのまま渡して起動すること。
 11. 子プロセスの起動自体に失敗した場合は一般エラーとして扱い、子プロセスの終了コードとは区別すること。
@@ -251,8 +251,8 @@ GitHub CLI は GitHub.com と GitHub Enterprise Server をまたいだ利用、�
 1. `install` は bash / zsh / fish の shell 設定ファイルに `gh` 関数 hook を追加または更新できること。
 2. `--shell bash|zsh|fish` により対象 shell を明示できること。未指定の場合は `SHELL` 環境変数から判定すること。
 3. 既定の書き込み先は bash が `~/.bashrc`、zsh が `~/.zshrc`、fish が `~/.config/fish/config.fish` とすること。
-4. hook は `gh-auto-switch switch` を実行し、成功した場合のみ `command gh` で元の `gh` コマンドを実行すること。
-5. `gh-auto-switch switch` が失敗した場合、元の `gh` コマンドは実行しないこと。
+4. hook は `gh-auto-switch exec -- gh ...` を実行し、切替から元の `gh` コマンド終了まで排他 lock を保持すること。
+5. `gh-auto-switch exec` の切替前処理が失敗した場合、元の `gh` コマンドは実行しないこと。
 6. hook は管理コメントブロックで囲み、再実行時は既存ブロックを置換して重複追加しないこと。
 7. `install --print` が指定された場合はファイルを書き込まず、hook を標準出力へ出力すること。
 
@@ -368,7 +368,7 @@ rules:
 - userinfo の password component は credential として扱い、`--verbose` および `--json` を含む全出力でマスクすること。userinfo の username component は `url_user` として扱ってよい。
 - userinfo の username component が 40 文字以上、または `ghp_`, `github_pat_`, `gho_`, `ghu_`, `ghs_`, `ghr_` で始まる場合は token らしい値として扱い、出力上は `***` にマスクすること。
 - `print-env` の出力は shell injection の影響を受けないよう、host validation と shell quote を必須とすること。
-- `exec` は子プロセス終了まで host 単位の lock を保持すること。ただし `gh` の active account は host-global な状態であるため、本ツールを介さない外部プロセスにより変更され得る制約を README に明記すること。
+- `exec` は子プロセス終了まで OS user の実効 `GH_CONFIG_DIR` 認証ストア単位の lock を保持すること。ただし `gh` の active account は本ツールを介さない外部プロセスにより変更され得る制約を README に明記すること。
 - `exec` は shell を介して子プロセスを起動してはならないこと。
 - `gh` subprocess へ渡す環境変数は原則として親プロセスから継承してよいが、`GH_HOST` は対象 host で上書きし、token 系環境変数は検出時点で fail closed すること。
 
@@ -485,7 +485,7 @@ ghautoswitch check --json
 10. `on_unmatched=noop` の場合、`resolve` / `switch` / `print-env` は rule 未一致でも終了コード 0 で account / rule 未解決として扱われること。
 11. `exec` は rule 未一致時、`--allow-unmatched` がない限り子プロセスを実行せず終了コード 4 で失敗すること。
 12. `exec` は切替後に shell を介さず子プロセスを実行し、子プロセスの終了コードを返すこと。
-13. `exec` は子プロセス終了まで host 単位の lock を保持すること。
+13. `exec` は子プロセス終了まで OS user の実効 `GH_CONFIG_DIR` 認証ストア単位の lock を保持すること。
 14. `remote_url` glob が 7.2.1 の正規化 remote URL に対して照合されること。
 15. `print-env` が `export GH_HOST='github.com'` 形式で shell-safe な出力を行うこと。
 16. `GH_TOKEN` 等の token 環境変数が存在する場合、`switch` / `exec` / `check` が終了コード 3 で失敗すること。

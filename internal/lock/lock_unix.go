@@ -3,6 +3,8 @@
 package lock
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -18,7 +20,15 @@ type Lock struct {
 	file *os.File
 }
 
-func Acquire(host string, timeout time.Duration) (*Lock, error) {
+func AcquireAuthStore(timeout time.Duration) (*Lock, error) {
+	key, err := authStoreKey()
+	if err != nil {
+		return nil, err
+	}
+	return acquire(key, timeout)
+}
+
+func acquire(key string, timeout time.Duration) (*Lock, error) {
 	dir := baseDir()
 	if _, err := os.Lstat(dir); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -34,7 +44,7 @@ func Acquire(host string, timeout time.Duration) (*Lock, error) {
 	if err := validateDir(dir); err != nil {
 		return nil, err
 	}
-	name := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(host) + ".lock"
+	name := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(key) + ".lock"
 	f, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.InternalError, "could not open lock file", err)
@@ -47,7 +57,7 @@ func Acquire(host string, timeout time.Duration) (*Lock, error) {
 		}
 		if time.Now().After(deadline) {
 			_ = f.Close()
-			return nil, apperr.New(apperr.LockTimeout, "timed out acquiring host lock")
+			return nil, apperr.New(apperr.LockTimeout, "timed out acquiring auth store lock")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -66,6 +76,23 @@ func baseDir() string {
 		return filepath.Join(d, "ghautoswitch")
 	}
 	return filepath.Join(os.TempDir(), fmt.Sprintf("ghautoswitch-%d", os.Getuid()))
+}
+
+func authStoreKey() (string, error) {
+	dir := os.Getenv("GH_CONFIG_DIR")
+	if dir == "" {
+		userConfig, err := os.UserConfigDir()
+		if err != nil {
+			return "", apperr.Wrap(apperr.InternalError, "could not resolve gh config directory", err)
+		}
+		dir = filepath.Join(userConfig, "gh")
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", apperr.Wrap(apperr.InternalError, "could not resolve gh config directory", err)
+	}
+	sum := sha256.Sum256([]byte(filepath.Clean(abs)))
+	return "authstore-" + hex.EncodeToString(sum[:]), nil
 }
 
 func validateDir(path string) error {

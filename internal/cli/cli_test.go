@@ -527,8 +527,7 @@ func TestInstallPrintsShellSnippets(t *testing.T) {
 			shell: "bash",
 			contains: []string{
 				"# >>> gh-auto-switch hook >>>",
-				"gh-auto-switch switch >/dev/null || return $?",
-				"command gh \"$@\"",
+				"gh-auto-switch exec -- gh \"$@\"",
 			},
 		},
 		{
@@ -536,8 +535,7 @@ func TestInstallPrintsShellSnippets(t *testing.T) {
 			shell: "zsh",
 			contains: []string{
 				"# >>> gh-auto-switch hook >>>",
-				"gh-auto-switch switch >/dev/null || return $?",
-				"command gh \"$@\"",
+				"gh-auto-switch exec -- gh \"$@\"",
 			},
 		},
 		{
@@ -545,8 +543,7 @@ func TestInstallPrintsShellSnippets(t *testing.T) {
 			shell: "fish",
 			contains: []string{
 				"# >>> gh-auto-switch hook >>>",
-				"gh-auto-switch switch >/dev/null; or return $status",
-				"command gh $argv",
+				"gh-auto-switch exec -- gh $argv",
 			},
 		},
 	}
@@ -614,7 +611,7 @@ func TestInstallDetectsShellFromEnvAndCreatesFishConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "command gh $argv") {
+	if !strings.Contains(string(data), "gh-auto-switch exec -- gh $argv") {
 		t.Fatalf("fish hook not written:\n%s", string(data))
 	}
 }

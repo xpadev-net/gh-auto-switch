@@ -67,10 +67,10 @@ gh-auto-switch install --shell fish --print
 
 `print-env` only prints `GH_HOST`; it does not switch accounts. `switch` changes `gh` state for the target host but cannot change the parent shell environment.
 
-`install` adds a managed `gh` shell function to bash, zsh, or fish so normal `gh ...` commands run `gh-auto-switch switch` first. It updates `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish` by default; use `--print` to print the hook without writing files.
+`install` adds a managed `gh` shell function to bash, zsh, or fish so normal `gh ...` commands run through `gh-auto-switch exec`. It updates `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish` by default; use `--print` to print the hook without writing files.
 
 ## Authentication Notes
 
 `switch`, `exec`, and `check` fail closed when `GH_TOKEN`, `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`, or `GITHUB_ENTERPRISE_TOKEN` is set. `GH_CONFIG_DIR` is inherited by subprocesses, so it affects which `gh` authentication store is inspected and switched.
 
-`gh` stores the active account per host globally. `gh-auto-switch exec` holds a host lock while the child process runs, but other tools that bypass `gh-auto-switch` can still change `gh` state.
+`gh` stores the active account in a user-level authentication store. `gh-auto-switch switch` and `exec` hold a lock for the current OS user's effective `GH_CONFIG_DIR` store; `exec` keeps that lock while the child process runs. Tools that bypass `gh-auto-switch` can still change `gh` state.

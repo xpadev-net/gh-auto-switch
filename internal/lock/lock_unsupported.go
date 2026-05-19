@@ -10,8 +10,8 @@ import (
 
 type Lock struct{}
 
-func Acquire(host string, timeout time.Duration) (*Lock, error) {
-	return nil, apperr.New(apperr.InternalError, "host locks are unsupported on this platform")
+func AcquireAuthStore(timeout time.Duration) (*Lock, error) {
+	return nil, apperr.New(apperr.InternalError, "auth store locks are unsupported on this platform")
 }
 
 func (l *Lock) Release() {}

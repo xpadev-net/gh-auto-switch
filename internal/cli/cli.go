@@ -163,7 +163,7 @@ func cmdSwitch(args []string, g globals, stdout, stderr io.Writer) (int, error) 
 		}
 		return 4, apperr.New(apperr.UnmatchedRule, "no matching rule")
 	}
-	l, err := lock.Acquire(r.remote.Host, 10*time.Second)
+	l, err := lock.AcquireAuthStore(10 * time.Second)
 	if err != nil {
 		return 1, err
 	}
@@ -186,7 +186,7 @@ func switchDefaultAccount(g globals, stdout io.Writer) (int, error) {
 	if rule == nil {
 		return 1, apperr.New(apperr.NotGitRepository, "not a git repository")
 	}
-	l, err := lock.Acquire(rule.Host, 10*time.Second)
+	l, err := lock.AcquireAuthStore(10 * time.Second)
 	if err != nil {
 		return 1, err
 	}
@@ -237,7 +237,7 @@ func cmdExec(args []string, g globals, stdout, stderr io.Writer) (int, error) {
 		}
 		return runChild(cmdArgs, r.remote.Host, stdout, stderr)
 	}
-	l, err := lock.Acquire(r.remote.Host, 10*time.Second)
+	l, err := lock.AcquireAuthStore(10 * time.Second)
 	if err != nil {
 		return 1, err
 	}
