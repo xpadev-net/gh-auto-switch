@@ -258,6 +258,8 @@ func cmdExec(args []string, g globals, stdout, stderr io.Writer) (int, error) {
 }
 
 func execDefaultAccount(cmdArgs []string, stdout, stderr io.Writer) (int, error) {
+	// Outside-repo fallback still needs config data to find the unconditional
+	// default rule, so load it directly on this path.
 	cfg, _, err := config.Load()
 	if err != nil {
 		return 2, err

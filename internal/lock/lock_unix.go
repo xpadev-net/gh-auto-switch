@@ -90,6 +90,8 @@ func authStoreKey() (string, error) {
 			dir = filepath.Join(home, ".config", "gh")
 		}
 	}
+	// Match gh behavior: a relative GH_CONFIG_DIR is interpreted from each
+	// process's current working directory, so lock scope follows that semantics.
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return "", apperr.Wrap(apperr.InternalError, "could not resolve gh config directory", err)
